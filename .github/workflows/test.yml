@@ -32,9 +32,11 @@ jobs:
           
           echo "Работаем с видео: $TARGET_URL"
           
-          # Маскируемся под iOS/Android клиент, чтобы YouTube не требовал подтверждения
+          # 1. --js-runtimes node - заставляет решать проверочные JS-скрипты YouTube
+          # 2. tv_embedded - притворяется телевизором, обходя бота
           yt-dlp \
-            --extractor-args "youtube:player_client=ios,web" \
+            --js-runtimes node \
+            --extractor-args "youtube:player_client=tv_embedded,web" \
             --no-part \
             -f "best[ext=mp4]/best" \
             -o "stream_${TARGET_ID}.%(ext)s" \
