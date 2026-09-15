@@ -1,21 +1,51 @@
-name: Test Recording Tools
+name: Stream Recorder
 
 on:
-  workflow_dispatch:
+  repository_dispatch:
+    types: [start-record] # Запуск от Google Скрипта
+  workflow_dispatch:      # Запуск вручную для теста
+    inputs:
+      url:
+        description: 'Ссылка на видео/стрим для проверки'
+        required: true
+        default: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
+      id:
+        description: 'ID видео'
+        required: true
+        default: 'test_video'
 
 jobs:
-  check-system:
+  record-and-upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Установка FFmpeg и yt-dlp
+      - name: Установка софта (yt-dlp, ffmpeg, rclone)
         run: |
-          sudo apt update && sudo apt install -y ffmpeg
+          sudo apt-get update && sudo apt-get install -y ffmpeg curl
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
 
-      - name: Проверка версий
+      - name: Запись стрима / скачивание
         run: |
-          echo "=== Проверяем FFmpeg ==="
-          ffmpeg -version | head -n 1
-          echo "=== Проверяем yt-dlp ==="
-          yt-dlp --version
+          TARGET_URL="${{ github.event.client_payload.url || github.event.inputs.url }}"
+          TARGET_ID="${{ github.event.client_payload.id || github.event.inputs.id }}"
+          
+          echo "Работаем с видео: $TARGET_URL"
+          
+          yt-dlp \
+            --live-from-start \
+            --no-part \
+            -f "best[ext=mp4]/best" \
+            -o "stream_${TARGET_ID}.%(ext)s" \
+            "$TARGET_URL"
+
+      - name: Настройка Rclone для Google Диска
+        if: always()
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
+
+      - name: Отправка на Google Диск
+        if: always()
+        run: |
+          rclone copy ./ gdrive:YouTube_Records/ --include "stream_*.mp4" --include "stream_*.mkv" -v
