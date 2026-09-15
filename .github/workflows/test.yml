@@ -29,7 +29,7 @@ jobs:
           # 2. Установка rclone
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
           
-          # 3. Скачиваем Xray со всеми базами данных (geosite.dat и geoip.dat)
+          # 3. Скачиваем Xray со всеми базами данных
           curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           sudo unzip -o xray.zip -d /usr/local/bin/
           sudo chmod +x /usr/local/bin/xray
@@ -38,14 +38,10 @@ jobs:
         env:
           CONFIG_DATA: ${{ secrets.XRAY_CONFIG }}
         run: |
-          # Создаем файл конфига из секрета
           printf "%s\n" "$CONFIG_DATA" > config.json
-          
-          # Запускаем xray в фоновом режиме
           xray run -c config.json &
           sleep 4
           
-          # Проверяем, сменился ли IP через порт 10808
           echo "Проверяем IP через VPN:"
           curl --socks5 127.0.0.1:10808 https://api.ipify.org
           echo ""
@@ -57,10 +53,12 @@ jobs:
           
           echo "Качаем видео через наш VPN: $TARGET_URL"
           
+          # Берем лучший звук и лучшее видео и сохраняем в MP4
           yt-dlp \
             --proxy "socks5://127.0.0.1:10808" \
+            --js-runtimes node \
             --no-part \
-            -f "best[ext=mp4]/best" \
+            --merge-output-format mp4 \
             -o "stream_${TARGET_ID}.%(ext)s" \
             "$TARGET_URL"
 
