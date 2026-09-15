@@ -2,11 +2,11 @@ name: Stream Recorder
 
 on:
   repository_dispatch:
-    types: [start-record] # Запуск от Google Скрипта
-  workflow_dispatch:      # Запуск вручную для теста
+    types: [start-record]
+  workflow_dispatch:
     inputs:
       url:
-        description: 'Ссылка на видео/стрим для проверки'
+        description: 'Ссылка на видео/стрим'
         required: true
         default: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
       id:
@@ -32,8 +32,8 @@ jobs:
           
           echo "Работаем с видео: $TARGET_URL"
           
+          # Скачивает и стрим в реальном времени, и обычное видео
           yt-dlp \
-            --live-from-start \
             --no-part \
             -f "best[ext=mp4]/best" \
             -o "stream_${TARGET_ID}.%(ext)s" \
@@ -41,9 +41,12 @@ jobs:
 
       - name: Настройка Rclone для Google Диска
         if: always()
+        env:
+          # Передаем ключ безопасно через переменную, чтобы не сломались кавычки
+          RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONFIG_DATA }}
         run: |
           mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONFIG_DATA }}" > ~/.config/rclone/rclone.conf
+          printf "%s\n" "$RCLONE_CONF_DATA" > ~/.config/rclone/rclone.conf
 
       - name: Отправка на Google Диск
         if: always()
