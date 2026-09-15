@@ -32,8 +32,9 @@ jobs:
           
           echo "Работаем с видео: $TARGET_URL"
           
-          # Скачивает и стрим в реальном времени, и обычное видео
+          # Маскируемся под iOS/Android клиент, чтобы YouTube не требовал подтверждения
           yt-dlp \
+            --extractor-args "youtube:player_client=ios,web" \
             --no-part \
             -f "best[ext=mp4]/best" \
             -o "stream_${TARGET_ID}.%(ext)s" \
@@ -42,7 +43,6 @@ jobs:
       - name: Настройка Rclone для Google Диска
         if: always()
         env:
-          # Передаем ключ безопасно через переменную, чтобы не сломались кавычки
           RCLONE_CONF_DATA: ${{ secrets.RCLONE_CONFIG_DATA }}
         run: |
           mkdir -p ~/.config/rclone
