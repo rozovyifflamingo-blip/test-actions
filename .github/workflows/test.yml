@@ -29,10 +29,9 @@ jobs:
           # 2. Установка rclone
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
           
-          # 3. Скачиваем официальный Xray-core
+          # 3. Скачиваем Xray со всеми базами данных (geosite.dat и geoip.dat)
           curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -o xray.zip xray
-          sudo mv xray /usr/local/bin/xray
+          sudo unzip -o xray.zip -d /usr/local/bin/
           sudo chmod +x /usr/local/bin/xray
 
       - name: Запуск Xray VPN
@@ -46,7 +45,7 @@ jobs:
           xray run -c config.json &
           sleep 4
           
-          # Проверяем, сменился ли IP через порт 10808 (из вашего конфига)
+          # Проверяем, сменился ли IP через порт 10808
           echo "Проверяем IP через VPN:"
           curl --socks5 127.0.0.1:10808 https://api.ipify.org
           echo ""
