@@ -1,0 +1,17 @@
+name: Test Actions
+
+# Этот параметр позволяет запускать тест вручную кнопкой
+on:
+  workflow_dispatch:
+
+jobs:
+  check-system:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Приветствие и тест софта
+        run: |
+          echo "🚀 Ура! GitHub Actions работает на твоем аккаунте!"
+          echo "Проверяем наличие Python:"
+          python3 --version
+          echo "Проверяем наличие FFmpeg (нужен для видео):"
+          ffmpeg -version | head -n 1
