@@ -18,25 +18,48 @@ jobs:
   record-and-upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Установка софта (yt-dlp, ffmpeg, rclone)
+      - name: Установка софта (yt-dlp, ffmpeg, rclone, xray)
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg curl
+          sudo apt-get update && sudo apt-get install -y ffmpeg curl unzip
+          
+          # 1. Установка yt-dlp
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+          
+          # 2. Установка rclone
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          
+          # 3. Скачиваем официальный Xray-core
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -o xray.zip xray
+          sudo mv xray /usr/local/bin/xray
+          sudo chmod +x /usr/local/bin/xray
+
+      - name: Запуск Xray VPN
+        env:
+          CONFIG_DATA: ${{ secrets.XRAY_CONFIG }}
+        run: |
+          # Создаем файл конфига из секрета
+          printf "%s\n" "$CONFIG_DATA" > config.json
+          
+          # Запускаем xray в фоновом режиме
+          xray run -c config.json &
+          sleep 4
+          
+          # Проверяем, сменился ли IP через порт 10808 (из вашего конфига)
+          echo "Проверяем IP через VPN:"
+          curl --socks5 127.0.0.1:10808 https://api.ipify.org
+          echo ""
 
       - name: Запись стрима / скачивание
         run: |
           TARGET_URL="${{ github.event.client_payload.url || github.event.inputs.url }}"
           TARGET_ID="${{ github.event.client_payload.id || github.event.inputs.id }}"
           
-          echo "Работаем с видео: $TARGET_URL"
+          echo "Качаем видео через наш VPN: $TARGET_URL"
           
-          # 1. --js-runtimes node - заставляет решать проверочные JS-скрипты YouTube
-          # 2. tv_embedded - притворяется телевизором, обходя бота
           yt-dlp \
-            --js-runtimes node \
-            --extractor-args "youtube:player_client=tv_embedded,web" \
+            --proxy "socks5://127.0.0.1:10808" \
             --no-part \
             -f "best[ext=mp4]/best" \
             -o "stream_${TARGET_ID}.%(ext)s" \
