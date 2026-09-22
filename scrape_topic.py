@@ -420,11 +420,14 @@ def main():
         mark = "дата из текста" if ev["date_from_text"] else "дата = вчера"
         print(f"  * {ev['date']} | {ev['target']} | {ev['command']} ({mark}){via}")
 
+    # actions.json сохраняем всегда (даже с пустым events) — иначе на первом
+    # запуске, пока в теме нет ни одной команды, файла не будет вообще,
+    # и последующий git add по явному имени упадёт с "pathspec ... did not match"
+    actions["topic_id"] = TOPIC_ID
     if new_events:
         actions["events"].extend(new_events)
-        actions["topic_id"] = TOPIC_ID
         actions["updated"] = datetime.now(TZ).isoformat(timespec="seconds")
-        save_json(ACTIONS_FILE, actions)
+    save_json(ACTIONS_FILE, actions)
 
     if new_posts:
         with open(TOPIC_FILE, "w", encoding="utf-8") as f:
