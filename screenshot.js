@@ -41,7 +41,8 @@ async function main() {
     await page.evaluate(() => document.fonts && document.fonts.ready);
 
     // 3. Замораживаем анимации/переходы, чтобы не поймать HP-бар
-    //    или эффект удара в промежуточном кадре
+    //    или эффект удара в промежуточном кадре; плюс прячем панель
+    //    автобоя/скорости — она не нужна на превью
     await page.addStyleTag({
       content: `
         *, *::before, *::after {
@@ -49,13 +50,19 @@ async function main() {
           animation-duration: 0s !important;
           transition: none !important;
         }
+        .auto-bar { display: none !important; }
       `,
     });
 
     // небольшая пауза, чтобы стиль точно применился перед снимком
     await page.waitForTimeout(150);
 
-    await page.screenshot({ path: OUT, fullPage: true });
+    // Снимаем не всю страницу (там пустое пространство внизу, размер
+    // которого меняется в зависимости от числа участников), а именно
+    // .container — обёртку всего контента. Playwright сам подгоняет
+    // кадр под фактическую высоту элемента, так что "лишний" низ
+    // отрезается автоматически, сколько бы участников ни было.
+    await page.locator(".container").screenshot({ path: OUT });
     console.log(`Скриншот сохранён: ${OUT}`);
   } finally {
     await browser.close();

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тестовая консоль команд — АнтиО</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: #14120f; color: #e8dcc0;
+    font: 14px/1.5 -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    display: flex; height: 100vh; overflow: hidden;
+  }
+  .console {
+    width: 420px; flex-shrink: 0;
+    display: flex; flex-direction: column;
+    border-right: 2px solid #4a3f2a;
+    background: #1c1912;
+  }
+  .console-head {
+    padding: 14px 16px; border-bottom: 1px solid #4a3f2a;
+  }
+  .console-head h1 { font-size: 15px; margin: 0 0 4px; color: #e5c158; }
+  .console-head p { margin: 0; font-size: 12px; color: #9a8f78; }
+
+  .form { padding: 14px 16px; border-bottom: 1px solid #4a3f2a; }
+  .form label { display: block; font-size: 11px; color: #9a8f78; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form input[type=text], .form textarea {
+    width: 100%; background: #0f0d0a; color: #e8dcc0;
+    border: 1px solid #4a3f2a; border-radius: 4px; padding: 7px 9px;
+    font-family: inherit; font-size: 13px; margin-bottom: 10px; resize: vertical;
+  }
+  .form textarea { min-height: 70px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .form button {
+    width: 100%; padding: 9px; border: none; border-radius: 4px;
+    background: #e5c158; color: #1c1912; font-weight: 600; cursor: pointer;
+    font-size: 13px;
+  }
+  .form button:hover { background: #f4dd8a; }
+  .form .hint { font-size: 11px; color: #9a8f78; margin: -4px 0 10px; line-height: 1.4; }
+  .form .hint code { background: #0f0d0a; padding: 1px 4px; border-radius: 3px; }
+
+  .feed { flex: 1; overflow-y: auto; padding: 10px 16px; }
+  .feed h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #9a8f78; margin: 6px 0; }
+  .post-item, .event-item {
+    background: #0f0d0a; border: 1px solid #3a3122; border-radius: 4px;
+    padding: 7px 9px; margin-bottom: 6px; font-size: 12px;
+  }
+  .post-item .who { color: #7fb3e0; font-weight: 600; }
+  .post-item .txt { color: #cfc3a5; white-space: pre-wrap; margin-top: 3px; }
+  .event-item { border-left: 3px solid #e5c158; }
+  .event-item.discarded { border-left-color: #a04848; opacity: 0.6; }
+  .event-item .cmd { font-weight: 600; color: #e5c158; }
+  .event-item.discarded .cmd { color: #d98a8a; }
+  .event-item .meta { color: #9a8f78; font-size: 11px; margin-top: 2px; }
+
+  .stage {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+  }
+  .stage-bar {
+    padding: 8px 16px; border-bottom: 1px solid #4a3f2a;
+    display: flex; align-items: center; gap: 10px; font-size: 12px; color: #9a8f78;
+  }
+  .stage-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: #4a3f2a; }
+  .stage-bar .dot.live { background: #6fbf6f; box-shadow: 0 0 6px #6fbf6f; }
+  iframe { flex: 1; border: none; width: 100%; background: #000; }
+
+  .clear-btn {
+    background: transparent; border: 1px solid #4a3f2a; color: #9a8f78;
+    border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; margin-left: auto;
+  }
+  .clear-btn:hover { border-color: #a04848; color: #d98a8a; }
+</style>
+</head>
+<body>
+
+<div class="console">
+  <div class="console-head">
+    <h1>Тестовая консоль команд</h1>
+    <p>Пишете «пост» здесь — консоль разбирает его той же логикой, что и парсер форума, и раз в секунду отправляет найденные события в бой справа.</p>
+  </div>
+
+  <div class="form">
+    <label>Ник админа темы (для теста)</label>
+    <input type="text" id="admin-name" value="Модератор">
+    <div class="hint">Совпадёт с этим именем автор поста — сможет писать команды за других, указывая их ник слева от команды.</div>
+
+    <div class="row">
+      <div>
+        <label>Автор поста</label>
+        <input type="text" id="post-author" value="Ева">
+      </div>
+    </div>
+
+    <label>Текст поста</label>
+    <textarea id="post-text" placeholder="Например: +атака 21/09&#10;или: !срыв&#10;или: !присоединяюсь&#10;или (от лица админа): Ева +атака 22/09"></textarea>
+    <div class="hint">
+      Команды: <code>+атака</code>, <code>!срыв</code>, <code>!присоединяюсь</code>.
+      Дата — <b>справа</b> от команды (<code>21/09</code>, <code>21.09.2026</code>).
+      Админ может писать чужой ник <b>слева</b> от команды.
+    </div>
+    <button id="send-btn">Опубликовать пост</button>
+  </div>
+
+  <div class="feed">
+    <h2>Посты <button class="clear-btn" id="clear-posts">очистить</button></h2>
+    <div id="posts-list"></div>
+    <h2>Разобранные события <button class="clear-btn" id="clear-events">очистить</button></h2>
+    <div id="events-list"></div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-bar">
+    <span class="dot" id="tick-dot"></span>
+    <span id="tick-label">проверка раз в секунду</span>
+    <button class="clear-btn" id="reset-battle">сбросить бой (перезагрузить)</button>
+  </div>
+  <iframe id="battle-frame" src="battle2.html"></iframe>
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────────────
+// Порт логики scrape_topic.py на JS — чтобы тестовая консоль
+// разбирала команды ТОЧНО так же, как настоящий парсер форума:
+// дата справа, права админа, дедуп "1 команда/лицо/день".
+// Дата берётся из системных часов браузера (для теста это ок).
+// ──────────────────────────────────────────────────────────────
+const MIN_YEAR = 2026;
+const COMMANDS = [
+  ["attack", /\+\s*атак\w*/gi],
+  ["sryv",   /!\s*срыв\w*/gi],
+  ["join",   /!\s*присоедин\w*/gi],
+];
+const DATE_RE = /(\d{1,2})[./\-](\d{1,2})(?:[./\-](\d{2,4}))?/g;
+const DATE_LOOKAHEAD = 30;
+const NAME_LOOKBEHIND = 40;
+const NAME_GAP_MAX = 12;
+
+const state = {
+  posts: [],           // {id, author, text, ts}
+  processedIds: new Set(),
+  knownNames: new Set(["Игрок", "Конник Нарнии", "Ева"]),
+  usedDates: new Map(), // key "target|command" -> Set(даты)
+  eventLog: [],         // для отображения в консоли (включая отброшенные)
+  eventSeq: 0,
+};
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function toISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+
+function normalizeDate(day, month, year, today) {
+  day = parseInt(day, 10); month = parseInt(month, 10);
+  if (!(day >= 1 && day <= 31 && month >= 1 && month <= 12)) return null;
+  let y = year ? parseInt(year, 10) : today.getFullYear();
+  if (year && y < 100) y += 2000;
+  let d = new Date(y, month - 1, day);
+  if (d.getMonth() !== month - 1) return null; // напр. 31.02 — некорректная дата
+
+  const future30 = new Date(today); future30.setDate(future30.getDate() + 30);
+  if (d > future30) {
+    const prev = new Date(y - 1, month - 1, day);
+    if (prev.getMonth() === month - 1 && prev.getFullYear() >= MIN_YEAR) d = prev;
+  }
+  if (d.getFullYear() < MIN_YEAR) return null;
+  return toISO(d);
+}
+
+const WORD_CHARS = "A-Za-zА-Яа-яЁё0-9_";
+
+function findLeftTarget(leftText, knownNames) {
+  if (!leftText || !knownNames.size) return null;
+  let best = null;
+  const names = [...knownNames].sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // JS-аналог \b, который реально работает с кириллицей: \b в JS
+    // построен на \w, а \w в JS — только ASCII, поэтому обычный \bИмя\b
+    // с кириллицей молча не матчится вообще
+    const rx = new RegExp(`(?<![${WORD_CHARS}])${escaped}(?![${WORD_CHARS}])`, "gi");
+    let m;
+    while ((m = rx.exec(leftText))) {
+      const gap = leftText.length - m.index - m[0].length;
+      if (gap <= NAME_GAP_MAX && (!best || m.index + m[0].length > best.end)) {
+        best = { name, end: m.index + m[0].length };
+      }
+    }
+  }
+  return best ? best.name : null;
+}
+
+function usedKey(target, command) { return target.trim().toLowerCase() + "|" + command; }
+
+// Возвращает список событий (включая отброшенные — с discarded:true —
+// для наглядности в консоли; в бой уходят только НЕ отброшенные)
+function extractEvents(post, today, adminName, knownNames, usedDates) {
+  const events = [];
+  const text = post.text;
+  const author = post.author;
+  const isAdmin = !!adminName && author.trim().toLowerCase() === adminName.trim().toLowerCase();
+
+  const hits = [];
+  for (const [command, rx] of COMMANDS) {
+    rx.lastIndex = 0;
+    let m;
+    while ((m = rx.exec(text))) hits.push([m.index, m.index + m[0].length, command]);
+  }
+  hits.sort((a, b) => a[0] - b[0]);
+
+  hits.forEach(([start, end, command], idx) => {
+    const prevEnd = idx > 0 ? hits[idx - 1][1] : 0;
+    const nextStart = idx + 1 < hits.length ? hits[idx + 1][0] : text.length;
+
+    if (command === "join") {
+      knownNames.add(author);
+      events.push({
+        id: `${post.id}:${command}:${start}`, postId: post.id, author, target: author,
+        command: "join", date: toISO(today), dateFromText: false, isAdminAction: false,
+        context: text.slice(Math.max(0, start-20), end+20).replace(/\n/g," ").trim(),
+        discarded: false,
+      });
+      return;
+    }
+
+    let target = author;
+    if (isAdmin) {
+      let leftWin = text.slice(Math.max(0, start - NAME_LOOKBEHIND, prevEnd), start);
+      const nl = leftWin.lastIndexOf("\n");
+      if (nl !== -1) leftWin = leftWin.slice(nl + 1);
+      const name = findLeftTarget(leftWin, knownNames);
+      if (name) target = name;
+    }
+
+    let rightWin = text.slice(end, Math.min(end + DATE_LOOKAHEAD, nextStart));
+    const nlr = rightWin.indexOf("\n");
+    if (nlr !== -1) rightWin = rightWin.slice(0, nlr);
+    DATE_RE.lastIndex = 0;
+    const dm = DATE_RE.exec(rightWin);
+    const writtenDate = dm ? normalizeDate(dm[1], dm[2], dm[3], today) : null;
+
+    const key = usedKey(target, command);
+    if (!usedDates.has(key)) usedDates.set(key, new Set());
+    const used = usedDates.get(key);
+
+    let finalDate, dateFromText, discarded = false;
+    if (writtenDate) {
+      if (used.has(writtenDate)) { discarded = true; finalDate = writtenDate; dateFromText = true; }
+      else { finalDate = writtenDate; dateFromText = true; }
+    } else {
+      const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+      const yestISO = toISO(yest);
+      if (used.has(yestISO)) { discarded = true; finalDate = yestISO; dateFromText = false; }
+      else { finalDate = yestISO; dateFromText = false; }
+    }
+    if (!discarded) { used.add(finalDate); knownNames.add(target); knownNames.add(author); }
+
+    events.push({
+      id: `${post.id}:${command}:${start}`, postId: post.id, author, target, command,
+      date: finalDate, dateFromText, isAdminAction: isAdmin && target.toLowerCase() !== author.toLowerCase(),
+      context: text.slice(Math.max(0,start-30), Math.min(text.length,end+30)).replace(/\n/g," ").trim(),
+      discarded,
+    });
+  });
+  return events;
+}
+
+// ── UI ──
+const postsListEl = document.getElementById("posts-list");
+const eventsListEl = document.getElementById("events-list");
+const frame = document.getElementById("battle-frame");
+const tickDot = document.getElementById("tick-dot");
+
+function renderPosts() {
+  postsListEl.innerHTML = state.posts.slice().reverse().map(p => `
+    <div class="post-item">
+      <span class="who">${escapeHtml(p.author)}</span>
+      <div class="txt">${escapeHtml(p.text)}</div>
+    </div>`).join("") || `<div style="color:#5a5142;font-size:12px;">пока пусто</div>`;
+}
+function renderEvents() {
+  eventsListEl.innerHTML = state.eventLog.slice().reverse().map(e => `
+    <div class="event-item ${e.discarded ? "discarded" : ""}">
+      <span class="cmd">${e.command}</span> → <b>${escapeHtml(e.target)}</b>
+      ${e.isAdminAction ? ` <span title="записал админ">(за него ${escapeHtml(e.author)})</span>` : ""}
+      <div class="meta">
+        дата: ${e.date} (${e.dateFromText ? "из текста" : "вчера/фолбэк"})
+        ${e.discarded ? " — ОТБРОШЕНО: дубликат за день" : " — применено"}
+      </div>
+    </div>`).join("") || `<div style="color:#5a5142;font-size:12px;">пока пусто</div>`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+document.getElementById("send-btn").addEventListener("click", () => {
+  const author = document.getElementById("post-author").value.trim() || "Аноним";
+  const text = document.getElementById("post-text").value;
+  if (!text.trim()) return;
+  state.posts.push({ id: "p" + (state.posts.length + 1), author, text, ts: Date.now() });
+  document.getElementById("post-text").value = "";
+  renderPosts();
+});
+document.getElementById("clear-posts").addEventListener("click", () => {
+  state.posts = []; state.processedIds.clear(); renderPosts();
+});
+document.getElementById("clear-events").addEventListener("click", () => {
+  state.eventLog = []; renderEvents();
+});
+document.getElementById("reset-battle").addEventListener("click", () => {
+  frame.src = frame.src; // перезагрузить iframe = чистый бой
+  state.processedIds.clear();
+  state.knownNames = new Set(["Игрок", "Конник Нарнии", "Ева"]);
+  state.usedDates.clear();
+  state.eventLog = [];
+  renderEvents();
+});
+
+// ── тик раз в секунду ──
+setInterval(() => {
+  const today = new Date();
+  const adminName = document.getElementById("admin-name").value.trim();
+  const freshEvents = [];
+
+  state.posts.forEach(p => {
+    if (state.processedIds.has(p.id)) return;
+    state.processedIds.add(p.id);
+    const evs = extractEvents(p, today, adminName, state.knownNames, state.usedDates);
+    evs.forEach(e => { e.seq = state.eventSeq++; state.eventLog.push(e); });
+    freshEvents.push(...evs.filter(e => !e.discarded));
+  });
+
+  if (freshEvents.length) {
+    renderEvents();
+    try {
+      frame.contentWindow.ingestFeed({
+        events: freshEvents.map(e => ({
+          id: e.id, post_id: e.postId, author: e.author, target: e.target,
+          command: e.command, date: e.date, is_admin_action: e.isAdminAction,
+        })),
+      });
+      tickDot.classList.add("live");
+      setTimeout(() => tickDot.classList.remove("live"), 300);
+    } catch (err) {
+      console.warn("battle2.html ещё не готов принять события:", err);
+    }
+  }
+}, 1000);
+
+renderPosts();
+renderEvents();
+</script>
+</body>
+</html>
