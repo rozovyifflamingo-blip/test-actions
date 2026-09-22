@@ -40,7 +40,8 @@ import requests
 from bs4 import BeautifulSoup
 
 TOPIC_ID = os.environ.get("TOPIC_ID", "85035")
-BASE = "https://antio.ru/"
+BASE = os.environ.get("FORUM_BASE_URL", "https://antio.ru/").rstrip("/") + "/"
+IS_LOCAL_TEST = not BASE.startswith("https://antio.ru")
 POSTS_PER_PAGE = 20
 MAX_PAGES_PER_RUN = 50
 DELAY_SEC = 2.0
@@ -101,6 +102,10 @@ def save_json(path, data):
 
 # ── сеть ──
 def build_proxies():
+    if IS_LOCAL_TEST:
+        # локальный форум-эмулятор — прокси не нужен и всё равно не
+        # доведёт до localhost
+        return None
     if PROXY_URL:
         # один секрет — можно как "http://user:pass@host:port",
         # так и просто "user:pass@host:port" (схему подставим сами)
