@@ -1,0 +1,83 @@
+name: Тест эмулятора форума (скрипт + скриншот)
+
+# Запускается вручную из вкладки Actions на GitHub — кнопка "Run workflow".
+# Ничего не ставится на ваш компьютер: всё выполняется на сервере GitHub.
+# Настоящий форум antio.ru не трогается — скрипт ходит на локальный
+# эмулятор forum_emulator.py, поднятый тут же, на этом же раннере.
+on:
+  workflow_dispatch:
+    inputs:
+      posts_json:
+        description: >-
+          Тестовые посты, JSON-массив [{"author":"...","text":"..."}].
+          Публикуются по очереди, как на реальном форуме. Можно оставить
+          пример по умолчанию или вписать свои.
+        required: false
+        default: '[{"author":"Модератор","text":"Открываем тему."},{"author":"Ева","text":"+атака 21/09"},{"author":"Модератор","text":"Конник Нарнии +атака 22/09"},{"author":"Игрок","text":"!присоединяюсь"}]'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Установка Python-зависимостей
+        run: pip install requests beautifulsoup4
+
+      - name: Установка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Установка playwright-core (системный Chrome уже есть на раннере)
+        run: npm install playwright-core@1
+
+      - name: Поднять эмулятор форума
+        run: |
+          python3 forum_emulator.py 8000 &
+          echo $! > emulator.pid
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8000/ > /dev/null && break
+            sleep 0.5
+          done
+
+      - name: Опубликовать тестовые посты по очереди
+        env:
+          POSTS_JSON: ${{ inputs.posts_json }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request, urllib.parse
+
+          posts = json.loads(os.environ["POSTS_JSON"])
+          for p in posts:
+              data = urllib.parse.urlencode({"author": p["author"], "text": p["text"]}).encode()
+              urllib.request.urlopen("http://127.0.0.1:8000/post", data=data)
+              print(f"опубликован пост: {p['author']}: {p['text']}")
+              time.sleep(1)
+          PY
+
+      - name: Скриншот battle2.html (тем же screenshot.js, что и в бою)
+        env:
+          SCREENSHOT_URL: "http://127.0.0.1:8000/battle2.html"
+          SCREENSHOT_OUT: "test_run/battle_preview.png"
+        run: node screenshot.js
+
+      - name: Остановить эмулятор
+        if: always()
+        run: kill "$(cat emulator.pid)" 2>/dev/null || true
+
+      - name: Загрузить результат как артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-emulator-test-result
+          path: |
+            test_run/battle_preview.png
+            test_run/actions.json
+            test_run/state.json
+            test_run/topic.html
