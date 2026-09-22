@@ -1,0 +1,97 @@
+name: Слежение за темой AntiO
+on:
+  schedule:
+    - cron: "*/5 * * * *"      # каждые 5 минут (GitHub может задерживать на пару минут)
+  workflow_dispatch:
+    inputs:
+      topic_id:
+        description: "ID темы (showtopic=...)"
+        required: false
+        default: "85035"
+
+permissions:
+  contents: write               # нужно, чтобы бот коммитил файлы обратно
+
+concurrency:
+  group: antio-watch
+  cancel-in-progress: false     # не обрывать запуск на середине
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Установка Python-зависимостей
+        run: pip install requests beautifulsoup4
+
+      - name: Проверка темы форума
+        env:
+          TOPIC_ID: ${{ github.event.inputs.topic_id || '85035' }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+        run: python scrape_topic.py
+
+      # -- Решаем, есть ли реальные изменения -- от этого зависит,
+      #    запускать ли тяжёлый шаг со скриншотом
+      - name: Проверить наличие изменений
+        id: diff
+        run: |
+          if git diff --quiet -- actions.json state.json topic.html; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Изменений нет — скриншот не нужен."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Есть новые события — будет сделан скриншот."
+          fi
+
+      # -- Всё, что ниже, выполняется ТОЛЬКО при реальных изменениях --
+      - name: Установка Node.js
+        if: steps.diff.outputs.has_changes == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Установка playwright-core (без скачивания Chromium — берём системный Chrome)
+        if: steps.diff.outputs.has_changes == 'true'
+        run: npm install playwright-core@1
+
+      - name: Поднять локальный сервер со страницей боя
+        if: steps.diff.outputs.has_changes == 'true'
+        run: |
+          python3 -m http.server 8080 --directory . &
+          echo $! > server.pid
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8080/battle2.html > /dev/null && break
+            sleep 0.5
+          done
+
+      - name: Сделать скриншот battle2.html
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          SCREENSHOT_URL: "http://localhost:8080/battle2.html"
+          SCREENSHOT_OUT: "battle_preview.png"
+        run: node screenshot.js
+
+      - name: Остановить локальный сервер
+        if: steps.diff.outputs.has_changes == 'true'
+        run: kill "$(cat server.pid)" 2>/dev/null || true
+
+      # -- Коммитим всё разом: и данные, и (если был) новый скриншот --
+      - name: Закоммитить изменения
+        run: |
+          git config user.name  "antio-bot"
+          git config user.email "actions@github.com"
+          git add -A actions.json state.json topic.html battle_preview.png
+          if git diff --cached --quiet; then
+            echo "Нечего коммитить."
+          else
+            git commit -m "Обновление темы $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git pull --rebase --autostash
+            git push
+          fi

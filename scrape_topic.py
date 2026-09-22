@@ -61,6 +61,8 @@ HEADERS = {
     "Accept-Language": "ru,en;q=0.8",
 }
 
+PROXY_URL = os.environ.get("PROXY_URL", "").strip()
+# запасной вариант — если вместо одной строки заведены старые 4 секрета
 PROXY_HOST = os.environ.get("PROXY_HOST", "dc03.steelproxy.com")
 PROXY_PORT = os.environ.get("PROXY_PORT", "3071")
 PROXY_USER = os.environ.get("PROXY_USER", "5caDYcWX")
@@ -99,6 +101,13 @@ def save_json(path, data):
 
 # ── сеть ──
 def build_proxies():
+    if PROXY_URL:
+        # один секрет — можно как "http://user:pass@host:port",
+        # так и просто "user:pass@host:port" (схему подставим сами)
+        url = PROXY_URL
+        if not re.match(r"^https?://", url):
+            url = "http://" + url
+        return {"http": url, "https": url}
     url = f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
     return {"http": url, "https": url}
 
