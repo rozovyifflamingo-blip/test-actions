@@ -42,7 +42,10 @@ jobs:
       - name: Проверить наличие изменений
         id: diff
         run: |
-          if git diff --quiet -- actions.json state.json topic.html; then
+          # git diff не видит НОВЫЕ (untracked) файлы — а на первом запуске
+          # actions.json/state.json/topic.html как раз такие. Поэтому смотрим
+          # через git status, которая видит и новые, и изменённые файлы.
+          if [ -z "$(git status --porcelain -- actions.json state.json topic.html)" ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "Изменений нет — скриншот не нужен."
           else
@@ -87,7 +90,12 @@ jobs:
         run: |
           git config user.name  "antio-bot"
           git config user.email "actions@github.com"
-          git add -A actions.json state.json topic.html battle_preview.png
+          # добавляем только нужные файлы (и только если они существуют) —
+          # чтобы не подхватить node_modules/package.json, оставшиеся
+          # от установки playwright-core
+          for f in actions.json state.json topic.html battle_preview.png; do
+            [ -f "$f" ] && git add -- "$f"
+          done
           if git diff --cached --quiet; then
             echo "Нечего коммитить."
           else
