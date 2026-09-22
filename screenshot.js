@@ -1,14 +1,10 @@
 // screenshot.js
-// Открывает battle2.html локально, ждёт готовности данных и шрифтов,
-// компенсирует особенности рендеринга Linux (жирность/ClearType)
-// и сохраняет идеальный скриншот контейнера.
-
 const { chromium } = require("playwright-core");
 
 const URL = process.env.SCREENSHOT_URL || "http://localhost:8080/battle2.html";
 const OUT = process.env.SCREENSHOT_OUT || "battle_preview.png";
 const VIEWPORT = { width: 1200, height: 900 };
-const DEVICE_SCALE_FACTOR = 1.25; // Масштаб 125% под экран вашего ноутбука
+const DEVICE_SCALE_FACTOR = 1.25; // Ваш родной масштаб 125%
 const READY_TIMEOUT_MS = 20000;
 
 async function main() {
@@ -30,7 +26,7 @@ async function main() {
     console.log(`Открываю ${URL}`);
     await page.goto(URL, { waitUntil: "networkidle" });
 
-    // 1. Ждём сигнала от страницы: данные применились и всё отрисовалось
+    // 1. Ждём сигнала от страницы
     await page.waitForFunction(() => window.RENDER_READY === true, null, {
       timeout: READY_TIMEOUT_MS,
     });
@@ -38,10 +34,9 @@ async function main() {
     // 2. Ждём реальной готовности шрифтов
     await page.evaluate(() => document.fonts && document.fonts.ready);
     const isFontLoaded = await page.evaluate(() => document.fonts.check('11px "CGCHR"'));
-    console.log(`Шрифт CGCHR: ${isFontLoaded ? "загружен успешно" : "НЕ загружен (fallback)"}`);
+    console.log(`Шрифт CGCHR: ${isFontLoaded ? "загружен" : "НЕ загружен"}`);
 
-    // 3. Замораживаем анимации, прячем панель автобоя,
-    //    добавляем плотность шрифту (ClearType) и отодвигаем от рамки
+    // 3. Замораживаем анимации и исправляем обрезку букв
     await page.addStyleTag({
       content: `
         *, *::before, *::after {
@@ -53,21 +48,22 @@ async function main() {
           display: none !important; 
         }
 
-        /* Компенсация жирности шрифта на Linux и отступы от рамки */
+        /* Убираем обрезку верхушек букв и лишнюю жирность */
         .avatar-name {
-          -webkit-text-stroke: 0.35px currentColor !important;
-          text-shadow: 0 0 0.5px currentColor !important;
-          padding: 4px 4px 2px !important;
+          transform: none !important;         /* снимает баг с обрезкой верхушки буквы Е */
+          overflow: visible !important;      /* запрещает срезать выходящие пиксели */
+          -webkit-text-stroke: 0 !important; /* убирает избыточную жирность */
+          text-shadow: none !important;       /* убирает мыло вокруг букв */
+          padding: 3px 2px 0 !important;      /* возвращает точные родные отступы */
         }
       `,
     });
 
-    // Пауза, чтобы стили гарантированно применились перед кадром
     await page.waitForTimeout(150);
 
-    // 4. Снимаем именно блок .container (без лишней пустоты снизу)
+    // 4. Снимаем контейнер
     await page.locator(".container").screenshot({ path: OUT });
-    console.log(`Скриншот успешно сохранён: ${OUT}`);
+    console.log(`Скриншот сохранён: ${OUT}`);
   } finally {
     await browser.close();
   }
