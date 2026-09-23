@@ -15,6 +15,15 @@
     лица в один день).
   - Если написанная дата уже занята той же командой у того же лица —
     событие тоже отбрасывается.
+  - Дата не может быть РАНЬШЕ даты, когда это лицо (цель команды)
+    присоединилось (!присоединяюсь) — раньше своего входа в бой
+    действовать нельзя. Если лицо ещё не присоединялось вовсе —
+    команда отбрасывается.
+  - Дата не может быть ПОЗЖЕ даты того поста, в котором она написана —
+    «сегодня» здесь берётся не с системных часов скрипта, а из
+    собственного штампа времени поста на форуме (title у
+    abbr.published), чтобы не зависеть от часов машины, на которой
+    крутится крон.
 
 Права на команду:
   - Обычный участник действует только от своего имени: даже если он
@@ -178,6 +187,21 @@ def fetch_first_post_author(session, proxies):
 
 
 # ── дата ──
+def parse_post_datetime(post):
+    """Дата/время САМОГО поста по его штампу с форума (title у
+    abbr.published, формат "DD.MM.YYYY - HH:MM"), а не по системным
+    часам скрипта. Возвращает None, если штамп отсутствует или не
+    распознан — тогда вызывающий код обязан сам подставить безопасный
+    fallback (см. main())."""
+    raw = (post.get("timestamp") or post.get("time_text") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%d.%m.%Y - %H:%M").replace(tzinfo=TZ)
+    except ValueError:
+        return None
+
+
 def normalize_date(day, month, year, today):
     """YYYY-MM-DD или None, если дата некорректна / раньше MIN_YEAR."""
     try:
@@ -230,16 +254,26 @@ def find_left_target(left_text, known_names):
 
 
 # ── разбор команд одного поста ──
-def extract_events(post, today, admin_name, known_names, used_dates):
+def extract_events(post, today, admin_name, known_names, used_dates, join_dates, exiled):
     """
+    today: собственная дата ЭТОГО поста (см. parse_post_datetime) — не
+    системные часы. Служит и дефолтным годом внутри normalize_date, и
+    верхней границей для дат атак/срывов из этого поста.
     used_dates: dict {(target_lower, command): set(даты)} — обновляется
     на месте по мере обработки, чтобы дубликаты ловились и внутри
     одного прогона, не только между прогонами.
+    join_dates: dict {name_lower: "YYYY-MM-DD"} — дата, начиная с
+    которой лицо считается в бою (нижняя граница для атак/срывов).
+    Обновляется на месте.
+    exiled: set(name_lower) — кто изгнан на начало текущего прогона.
+    Используется только для чтения (кроме сброса при повторном join —
+    см. ниже), фактическое снятие изгнания делает unexile_active_names.
     """
     events = []
     text = post["text"]
     author = post["author"]
     is_admin = bool(admin_name) and author.strip().lower() == admin_name.strip().lower()
+    today_str = today.strftime("%Y-%m-%d")
 
     hits_all = sorted(
         (m.start(), m.end(), command)
@@ -251,6 +285,13 @@ def extract_events(post, today, admin_name, known_names, used_dates):
         next_start = hits_all[idx + 1][0] if idx + 1 < len(hits_all) else len(text)
 
         if command == "join":
+            name_l = author.strip().lower()
+            # первый join вообще, либо возвращение после изгнания —
+            # в обоих случаях это НОВАЯ нижняя граница для атак
+            if name_l not in join_dates or name_l in exiled:
+                join_dates[name_l] = today_str
+                exiled.discard(name_l)  # чтобы повторный join в этом же
+                                         # прогоне не сдвигал границу снова
             events.append({
                 "id": f"{post['post_id']}:{command}:{start}",
                 "post_id": post["post_id"],
@@ -258,7 +299,7 @@ def extract_events(post, today, admin_name, known_names, used_dates):
                 "author": author,
                 "target": author,
                 "command": "join",
-                "date": today.strftime("%Y-%m-%d"),
+                "date": today_str,
                 "date_from_text": False,
                 "is_admin_action": False,
                 "context": text[max(0, start - 20):end + 20].replace("\n", " ").strip(),
@@ -285,23 +326,35 @@ def extract_events(post, today, admin_name, known_names, used_dates):
         date_hits = list(DATE_RE.finditer(right_win))
         written_date = normalize_date(*date_hits[0].groups(), today=today) if date_hits else None
 
-        key = (target.strip().lower(), command)
+        target_l = target.strip().lower()
+        key = (target_l, command)
         used = used_dates.setdefault(key, set())
 
         # ── удар и срыв — независимые параметры: у одного лица не может
         #    быть одновременно и того, и другого в один день ──
         other_command = OTHER_COMMAND.get(command)
-        other_used = used_dates.get((target.strip().lower(), other_command), set()) if other_command else set()
+        other_used = used_dates.get((target_l, other_command), set()) if other_command else set()
 
         if written_date:
-            if written_date in used or written_date in other_used:
-                continue  # эта дата у этого лица уже занята той же (или противоположной) командой
-            final_date, date_from_text = written_date, True
+            candidate, date_from_text = written_date, True
         else:
-            yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-            if yesterday in used or yesterday in other_used:
-                continue  # даты нет, и вчера тоже уже было (той же или противоположной командой) — не считается
-            final_date, date_from_text = yesterday, False
+            candidate = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+            date_from_text = False
+
+        # ── верхняя граница: нельзя действовать позже даты САМОГО
+        #    поста (берём из штампа форума, не с часов скрипта) ──
+        if candidate > today_str:
+            continue
+
+        # ── нижняя граница: нельзя действовать раньше даты, когда
+        #    цель команды реально присоединилась к бою ──
+        join_date = join_dates.get(target_l)
+        if join_date is None or candidate < join_date:
+            continue
+
+        if candidate in used or candidate in other_used:
+            continue  # эта дата у этого лица уже занята той же (или противоположной) командой
+        final_date = candidate
 
         used.add(final_date)
         known_names.add(target)
@@ -443,7 +496,10 @@ def unexile_active_names(new_events, exiled):
 
 
 def main():
-    today = datetime.now(TZ)
+    # системные часы — только аварийный fallback на случай, если у
+    # поста нет своего штампа времени (не должно происходить в норме);
+    # вся игровая логика дат опирается на время форума, а не на них
+    system_now = datetime.now(TZ)
     proxies = build_proxies()
     session = requests.Session()
 
@@ -453,6 +509,10 @@ def main():
     all_posts = state.get("posts", [])
     title = state.get("title", f"Тема {TOPIC_ID}")
     known_names = set(state.get("known_names", DEFAULT_PARTICIPANTS))
+    join_dates = dict(state.get("join_dates", {}))
+    # изгнанные грузятся здесь же (не позже), чтобы join-обработка внутри
+    # цикла ниже могла корректно определить «возврат после изгнания»
+    exiled = set(state.get("exiled", []))
 
     admin_name = state.get("admin")
     if not admin_name:
@@ -488,7 +548,11 @@ def main():
         for p in fresh:
             seen_ids.add(p["post_id"])
             new_posts.append(p)
-            for ev in extract_events(p, today, admin_name, known_names, used_dates):
+            # «сегодня» для этого поста — его СОБСТВЕННЫЙ штамп времени
+            # с форума, а не часы машины, где крутится скрипт
+            post_today = parse_post_datetime(p) or system_now
+            for ev in extract_events(p, post_today, admin_name, known_names,
+                                      used_dates, join_dates, exiled):
                 if ev["id"] not in known_event_ids:
                     known_event_ids.add(ev["id"])
                     new_events.append(ev)
@@ -517,9 +581,15 @@ def main():
         actions["events"].extend(new_events)
 
     # ── изгнание за неактивность ──
-    exiled = set(state.get("exiled", []))
+    # «сегодня» для этой служебной проверки — дата САМОГО СВЕЖЕГО из
+    # известных постов темы (по её собственному штампу), а не системные
+    # часы: тема может быть неактивна, но это не значит, что часы
+    # скрипта врут — а наоборот, системные часы могут ошибаться сами
+    known_post_dates = [d for d in (parse_post_datetime(p) for p in all_posts) if d]
+    service_today = max(known_post_dates) if known_post_dates else system_now
+
     unexile_active_names(new_events, exiled)  # свежая активность снимает изгнание
-    exile_events, exiled = compute_exile_events(actions["events"], exiled, today, known_event_ids)
+    exile_events, exiled = compute_exile_events(actions["events"], exiled, service_today, known_event_ids)
     if exile_events:
         actions["events"].extend(exile_events)
         for ev in exile_events:
@@ -539,6 +609,7 @@ def main():
         "last_st": max(0, st - POSTS_PER_PAGE) if st else 0,
         "seen_post_ids": sorted(seen_ids, key=lambda x: int(x) if x.isdigit() else 0),
         "known_names": sorted(known_names),
+        "join_dates": join_dates,
         "exiled": sorted(exiled),
         "posts": all_posts,
         "checked_at": datetime.now(TZ).isoformat(timespec="seconds"),
