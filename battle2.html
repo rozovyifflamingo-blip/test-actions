@@ -378,6 +378,7 @@ body {
 .avatar-name {
   font-family: 'CGCHR', monospace;
   font-size: 11px;
+  font-weight: 600;
   letter-spacing: -0.5px;
   color: var(--text);
   text-align: center;
@@ -2185,6 +2186,7 @@ function updateBossPanelCap() {
   const rows = participantsBody.querySelectorAll("tr");
   if (rows.length <= 3) {
     bossPanel.style.height = ""; // вернуться к обычному взаимному stretch
+    bossPanel.style.alignSelf = ""; // и к обычному stretch по вертикали
     return;
   }
   const panelTop = participantsPanel.getBoundingClientRect().top;
@@ -2194,6 +2196,10 @@ function updateBossPanelCap() {
   const TRAILING_CHROME = 16;
   const capHeight = Math.ceil(thirdRowBottom - panelTop + TRAILING_CHROME);
   bossPanel.style.height = capHeight + "px";
+  // Явная высота отменяет stretch из .arena { align-items: stretch },
+  // а без него панель прилипает к верху ряда. Центрируем её вручную
+  // по вертикали относительно панели участников.
+  bossPanel.style.alignSelf = "center";
 }
 
 // ── ADAPTIVE TWO-WORD NAME ──
