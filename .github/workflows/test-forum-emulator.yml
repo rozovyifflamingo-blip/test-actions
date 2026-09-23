@@ -90,39 +90,79 @@ jobs:
         if: always()
         env:
           CHEVERETO_API_KEY: "chv_h7iX_1e84a730330d092a396a9d0d9d31d0a03f562212d72dbaad44ca595ac894fe03_8a04f4a069bd6ae9e88baecd9da8711685416ae14c1f4abd246063e59340188d"
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
           if [ ! -f test_run/battle_preview.png ]; then
             echo "Скриншота нет — пропускаю заливку."
             exit 0
           fi
-          if [ -z "$CHEVERETO_API_KEY" ]; then
-            echo "::warning::Секрет CHEVERETO_API_KEY не задан — скриншот не залит на хостинг."
-            exit 0
+
+          url=""
+
+          # ── 1) Основной хостинг: allwebs.ru (Chevereto), через прокси ──
+          if [ -n "$CHEVERETO_API_KEY" ]; then
+            proxy_args=()
+            if [ -n "$PROXY_URL" ]; then
+              p="$PROXY_URL"
+              case "$p" in
+                http://*|https://*) ;;
+                *) p="http://$p" ;;
+              esac
+              proxy_args=(--proxy "$p")
+            fi
+
+            response=$(curl --fail-with-body -sS --connect-timeout 20 "${proxy_args[@]}" -X POST \
+              -H "X-API-Key: $CHEVERETO_API_KEY" \
+              -H "Content-Type: multipart/form-data" \
+              -F "source=@test_run/battle_preview.png" \
+              https://allwebs.ru/api/1/upload) && main_status=0 || main_status=$?
+
+            if [ "$main_status" -eq 0 ]; then
+              echo "$response" > test_run/upload_response.json
+              url=$(echo "$response" | jq -r '.image.url // empty')
+              if [ -n "$url" ]; then
+                echo "Залито на allwebs.ru: $url"
+              else
+                echo "::warning::allwebs.ru ответил без .image.url — пробую резервный хостинг"
+                echo "$response"
+              fi
+            else
+              echo "::warning::allwebs.ru недоступен (curl код $main_status) — пробую резервный хостинг"
+            fi
+          else
+            echo "::warning::CHEVERETO_API_KEY не задан — сразу пробую резервный хостинг"
           fi
-          response=$(curl --fail-with-body -sS -X POST \
-            -H "X-API-Key: $CHEVERETO_API_KEY" \
-            -H "Content-Type: multipart/form-data" \
-            -F "source=@test_run/battle_preview.png" \
-            https://allwebs.ru/api/1/upload) || {
-              echo "::error::Заливка на фотохостинг не удалась"
-              echo "$response"
-              exit 1
-            }
-          echo "$response" > test_run/upload_response.json
-          url=$(echo "$response" | jq -r '.image.url // empty')
+
+          # ── 2) Резерв: catbox.moe — без ключа, без прокси, обычно доступен ──
+          # напрямую с раннера. Хранение постоянное (в отличие от 0x0.st/файлопомоек
+          # с автоудалением), поэтому годится и для лога, а не только для теста.
           if [ -z "$url" ]; then
-            echo "::error::В ответе фотохостинга нет .image.url"
-            echo "$response"
-            exit 1
+            fallback=$(curl --fail-with-body -sS --connect-timeout 20 \
+              -F "reqtype=fileupload" \
+              -F "fileToUpload=@test_run/battle_preview.png" \
+              https://catbox.moe/user/api.php) && fb_status=0 || fb_status=$?
+
+            if [ "$fb_status" -eq 0 ]; then
+              url=$(echo "$fallback" | tr -d '\r\n')
+              echo "Залито на резервный хостинг catbox.moe: $url"
+              echo "источник: catbox.moe (резерв)" > test_run/upload_response.json
+              echo "$url" >> test_run/upload_response.json
+            else
+              echo "::error::Резервный хостинг catbox.moe тоже недоступен"
+            fi
           fi
-          echo "image_url=$url" >> "$GITHUB_OUTPUT"
-          echo "Ссылка на скриншот боя: $url"
-          {
-            echo "### 📸 Скриншот боя"
-            echo "$url"
-            echo ""
-            echo "![preview]($url)"
-          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$url" ]; then
+            echo "image_url=$url" >> "$GITHUB_OUTPUT"
+            {
+              echo "### 📸 Скриншот боя"
+              echo "$url"
+              echo ""
+              echo "![preview]($url)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Скриншот не залит ни на один хостинг — останется только в log/ репозитория как PNG"
+          fi
 
       - name: Сохранить лог теста в репозитории (папка log/, не артефакт)
         if: always()
@@ -139,6 +179,9 @@ jobs:
           done
           if [ -n "$IMAGE_URL" ]; then
             echo "$IMAGE_URL" > "$dir/screenshot_url.txt"
+          elif [ -f test_run/battle_preview.png ]; then
+            # обе заливки не удались — кладём сам PNG, чтобы скрин не потерялся
+            cp test_run/battle_preview.png "$dir/"
           fi
           git add "$dir"
           if git diff --cached --quiet; then
