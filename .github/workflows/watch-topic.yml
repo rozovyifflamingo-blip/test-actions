@@ -74,11 +74,13 @@ jobs:
             sleep 0.5
           done
 
-      - name: Сделать скриншот battle2.html
+      - name: Сделать скриншоты battle2.html и calendar.html
         if: steps.diff.outputs.has_changes == 'true'
         env:
           SCREENSHOT_URL: "http://localhost:8080/battle2.html"
           SCREENSHOT_OUT: "battle_preview.png"
+          SCREENSHOT_URL_CALENDAR: "http://localhost:8080/calendar.html"
+          SCREENSHOT_OUT_CALENDAR: "calendar_preview.png"
         run: node screenshot.js
 
       - name: Остановить локальный сервер
@@ -93,7 +95,7 @@ jobs:
           # добавляем только нужные файлы (и только если они существуют) —
           # чтобы не подхватить node_modules/package.json, оставшиеся
           # от установки playwright-core
-          for f in actions.json state.json topic.html battle_preview.png; do
+          for f in actions.json state.json topic.html battle_preview.png calendar_preview.png; do
             [ -f "$f" ] && git add -- "$f"
           done
           if git diff --cached --quiet; then
