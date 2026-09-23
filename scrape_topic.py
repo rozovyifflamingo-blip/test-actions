@@ -52,6 +52,7 @@ TOPIC_FILE = "topic.html"
 
 TZ = timezone(timedelta(hours=3))  # Москва
 MIN_YEAR = 2026  # даты раньше этого года считаются некорректными
+EXILE_INACTIVE_DAYS = 7  # неактивность 7+ дней подряд — изгнание
 
 HEADERS = {
     "User-Agent": (
@@ -69,8 +70,9 @@ PROXY_PORT = os.environ.get("PROXY_PORT", "3071")
 PROXY_USER = os.environ.get("PROXY_USER", "5caDYcWX")
 PROXY_PASS = os.environ.get("PROXY_PASS", "c8tV1Bt8")
 
-# участники по умолчанию — как в исходном battle2.html
-DEFAULT_PARTICIPANTS = ["Игрок", "Конник Нарнии", "Ева"]
+# участники по умолчанию — пусто, известные имена собираются только
+# из реальных команд с форума (!присоединяюсь / +атака / !срыв)
+DEFAULT_PARTICIPANTS = []
 
 # ── команды ──
 COMMANDS = [
@@ -78,6 +80,9 @@ COMMANDS = [
     ("sryv",   re.compile(r"!\s*срыв\w*", re.IGNORECASE)),
     ("join",   re.compile(r"!\s*присоедин\w*", re.IGNORECASE)),
 ]
+# удар и срыв — самостоятельные параметры: не могут стоять одновременно
+# в один день у одного и того же лица (см. извлечение событий ниже)
+OTHER_COMMAND = {"attack": "sryv", "sryv": "attack"}
 # дата: 21/09, 21.09, 21-09, 21/09/25, 21.09.2025
 DATE_RE = re.compile(r"(\d{1,2})[./\-](\d{1,2})(?:[./\-](\d{2,4}))?")
 
@@ -283,14 +288,19 @@ def extract_events(post, today, admin_name, known_names, used_dates):
         key = (target.strip().lower(), command)
         used = used_dates.setdefault(key, set())
 
+        # ── удар и срыв — независимые параметры: у одного лица не может
+        #    быть одновременно и того, и другого в один день ──
+        other_command = OTHER_COMMAND.get(command)
+        other_used = used_dates.get((target.strip().lower(), other_command), set()) if other_command else set()
+
         if written_date:
-            if written_date in used:
-                continue  # эта дата у этого лица уже занята той же командой
+            if written_date in used or written_date in other_used:
+                continue  # эта дата у этого лица уже занята той же (или противоположной) командой
             final_date, date_from_text = written_date, True
         else:
             yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
-            if yesterday in used:
-                continue  # даты нет, и вчера тоже уже было — не считается
+            if yesterday in used or yesterday in other_used:
+                continue  # даты нет, и вчера тоже уже было (той же или противоположной командой) — не считается
             final_date, date_from_text = yesterday, False
 
         used.add(final_date)
@@ -356,6 +366,80 @@ def build_used_dates(existing_events):
         key = (target, e.get("command"))
         used.setdefault(key, set()).add(e.get("date"))
     return used
+
+
+def compute_exile_events(events, exiled_already, today, known_event_ids):
+    """
+    Смотрит по всем известным событиям (удар/срыв/присоединение), когда
+    у каждого участника была последняя активность. Если участник не
+    изгнан ранее и неактивен EXILE_INACTIVE_DAYS+ дней подряд —
+    формирует для него событие "exile".
+
+    exiled_already: set() имён (в нижнем регистре) — кто уже изгнан
+    ранее (не переизгоняем повторно, пока не появится новая активность
+    и функция un_exile_active_names не снимет изгнание).
+    Возвращает (new_exile_events, updated_exiled_set).
+    """
+    last_activity = {}  # name_lower -> (date_str, display_name)
+    for ev in events:
+        if ev.get("command") not in ("attack", "sryv", "join"):
+            continue
+        name = (ev.get("target") or ev.get("author") or "").strip()
+        d = ev.get("date")
+        if not name or not d:
+            continue
+        key = name.lower()
+        if key not in last_activity or d > last_activity[key][0]:
+            last_activity[key] = (d, name)
+
+    today_str = today.strftime("%Y-%m-%d")
+    exiled = set(exiled_already)
+    new_events = []
+
+    for key, (last_date, display_name) in last_activity.items():
+        if key in exiled:
+            continue
+        try:
+            last_dt = datetime.strptime(last_date, "%Y-%m-%d").replace(tzinfo=TZ)
+        except ValueError:
+            continue
+        inactive_days = (today.date() - last_dt.date()).days
+        if inactive_days < EXILE_INACTIVE_DAYS:
+            continue
+        exile_id = f"{display_name}:exile:{today_str}"
+        if exile_id in known_event_ids:
+            exiled.add(key)
+            continue
+        known_event_ids.add(exile_id)
+        exiled.add(key)
+        new_events.append({
+            "id": exile_id,
+            "post_id": None,
+            "pos": None,
+            "author": None,
+            "target": display_name,
+            "command": "exile",
+            "date": today_str,
+            "date_from_text": False,
+            "is_admin_action": False,
+            "context": f"неактивен {inactive_days} дн. подряд",
+            "post_time": None,
+        })
+    return new_events, exiled
+
+
+def unexile_active_names(new_events, exiled):
+    """Если изгнанный участник снова подал признак активности (новый
+    удар/срыв/присоединение), снимаем с него изгнание — при повторном
+    затишье 7+ дней он будет изгнан заново."""
+    for ev in new_events:
+        if ev.get("command") not in ("attack", "sryv", "join"):
+            continue
+        name = (ev.get("target") or ev.get("author") or "").strip()
+        key = name.lower()
+        if key in exiled:
+            exiled.discard(key)
+            print(f"  ↺ {name} снова активен — изгнание снято")
 
 
 def main():
@@ -431,7 +515,18 @@ def main():
     actions["topic_id"] = TOPIC_ID
     if new_events:
         actions["events"].extend(new_events)
+
+    # ── изгнание за неактивность ──
+    exiled = set(state.get("exiled", []))
+    unexile_active_names(new_events, exiled)  # свежая активность снимает изгнание
+    exile_events, exiled = compute_exile_events(actions["events"], exiled, today, known_event_ids)
+    if exile_events:
+        actions["events"].extend(exile_events)
+        for ev in exile_events:
+            print(f"  ⛔ {ev['date']} | {ev['target']} | изгнан ({ev['context']})")
+    if new_events or exile_events:
         actions["updated"] = datetime.now(TZ).isoformat(timespec="seconds")
+
     save_json(ACTIONS_FILE, actions)
 
     if new_posts:
@@ -444,13 +539,14 @@ def main():
         "last_st": max(0, st - POSTS_PER_PAGE) if st else 0,
         "seen_post_ids": sorted(seen_ids, key=lambda x: int(x) if x.isdigit() else 0),
         "known_names": sorted(known_names),
+        "exiled": sorted(exiled),
         "posts": all_posts,
         "checked_at": datetime.now(TZ).isoformat(timespec="seconds"),
     })
     save_json(STATE_FILE, state)
 
     print(f"Новых постов: {len(new_posts)}, новых событий: {len(new_events)}, "
-          f"всего постов: {len(all_posts)}, админ: {admin_name}")
+          f"изгнано новых: {len(exile_events)}, всего постов: {len(all_posts)}, админ: {admin_name}")
 
 
 if __name__ == "__main__":

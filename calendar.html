@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Календарь активности — АнтиО</title>
+<style>
+  :root {
+    --bg: #14120f;
+    --panel: #1c1912;
+    --panel2: #232019;
+    --border: #3a3122;
+    --border-accent: #4a3f2a;
+    --text: #e8dcc0;
+    --muted: #9a8f78;
+    --gold: #e5c158;
+    --ok: #2a7a2a;
+    --bad: #c03030;
+    --exile: #a04848;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body {
+    color: var(--text);
+    font: 13px/1.4 -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    padding: 20px;
+  }
+  .container { max-width: 100%; }
+  h1 { font-size: 16px; color: var(--gold); margin: 0 0 4px; letter-spacing: 0.5px; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .legend { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+  .legend .sq { width: 10px; height: 10px; display: inline-block; border-radius: 1px; margin-right: 5px; vertical-align: -1px; }
+  .wrap {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border-accent);
+    background: var(--panel);
+  }
+  table { border-collapse: collapse; font-size: 11px; }
+  th, td { border: 1px solid var(--border); padding: 0; text-align: center; }
+  th {
+    background: var(--panel2); color: var(--muted); font-weight: 600;
+    padding: 4px 3px; white-space: nowrap;
+  }
+  th.today { color: var(--gold); }
+  .name-cell {
+    background: var(--panel2); color: var(--text); padding: 5px 10px;
+    text-align: left; white-space: nowrap; font-weight: 600;
+    position: sticky; left: 0;
+  }
+  .name-cell.exiled { color: var(--exile); }
+  .name-cell .tag {
+    font-size: 9px; color: var(--exile); margin-left: 6px;
+    font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .day-cell { width: 18px; height: 18px; }
+  .sq { width: 10px; height: 10px; margin: 4px auto; border-radius: 1px; }
+  .sq.attack { background: var(--ok); }
+  .sq.sryv { background: var(--bad); }
+  .empty { color: var(--muted); padding: 30px 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Календарь активности</h1>
+  <div class="sub" id="sub">Загрузка…</div>
+  <div class="legend" id="legend" style="display:none">
+    <span><span class="sq attack"></span>удар</span>
+    <span><span class="sq sryv"></span>срыв</span>
+    <span><span class="tag" style="color:var(--exile)">изгнан</span> — неактивен 7+ дней</span>
+  </div>
+  <div class="wrap" id="wrap" style="display:none"><table id="cal"></table></div>
+  <div class="empty" id="empty" style="display:none">Пока нет данных — календарь заполнится после первых команд с форума.</div>
+</div>
+
+<script>
+// Страница лежит в том же репозитории, что и actions.json (как и
+// battle2.html), и отдаётся тем же сервером/GitHub Pages — путь
+// относительный, CORS не мешает.
+const FEED_URL = "actions.json";
+window.RENDER_READY = false; // используется внешним скринером, как в battle2.html
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function fmtDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function fmtShort(d) { return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`; }
+function parseDate(s) { return new Date(s + "T00:00:00"); }
+
+async function main() {
+  let data = { events: [] };
+  try {
+    const r = await fetch(FEED_URL, { cache: "no-store" });
+    if (r.ok) data = await r.json();
+  } catch (e) {
+    console.warn("Не удалось загрузить actions.json:", e);
+  }
+
+  const events = Array.isArray(data) ? data : (data.events || []);
+
+  // name -> { attack: Set(даты), sryv: Set(даты), exiled: bool }
+  const byName = new Map();
+  function ensure(name) {
+    const key = name.trim();
+    if (!key) return null;
+    if (!byName.has(key)) byName.set(key, { attack: new Set(), sryv: new Set(), exiled: false });
+    return byName.get(key);
+  }
+
+  let minDate = null, maxDate = null;
+
+  events.forEach(ev => {
+    const name = (ev.target || ev.author || "").trim();
+    if (!name) return;
+    if (ev.command === "join") { ensure(name); return; }
+    if (ev.command === "exile") { const p = ensure(name); if (p) p.exiled = true; return; }
+    if (ev.command !== "attack" && ev.command !== "sryv") return;
+    const d = ev.date;
+    const p = ensure(name);
+    if (!p || !d) return;
+    p[ev.command].add(d);
+    if (!minDate || d < minDate) minDate = d;
+    if (!maxDate || d > maxDate) maxDate = d;
+  });
+
+  const names = [...byName.keys()].sort((a, b) => a.localeCompare(b, "ru"));
+
+  if (names.length === 0) {
+    document.getElementById("sub").textContent = "";
+    document.getElementById("empty").style.display = "";
+    window.RENDER_READY = true;
+    return;
+  }
+
+  const todayStr = fmtDate(new Date());
+  if (!minDate) minDate = todayStr;
+  if (!maxDate || maxDate < todayStr) maxDate = todayStr;
+
+  const dates = [];
+  let cur = parseDate(minDate);
+  const end = parseDate(maxDate);
+  while (cur <= end) {
+    dates.push(fmtDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  document.getElementById("sub").textContent =
+    `${minDate} — ${maxDate} · участников: ${names.length}`;
+  document.getElementById("legend").style.display = "";
+  document.getElementById("wrap").style.display = "";
+
+  const table = document.getElementById("cal");
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  headRow.appendChild(document.createElement("th")); // угловая ячейка над именами
+  dates.forEach(d => {
+    const th = document.createElement("th");
+    if (d === todayStr) th.classList.add("today");
+    th.textContent = fmtShort(parseDate(d));
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  names.forEach(name => {
+    const p = byName.get(name);
+    const tr = document.createElement("tr");
+
+    const nameTd = document.createElement("td");
+    nameTd.className = "name-cell" + (p.exiled ? " exiled" : "");
+    nameTd.textContent = name;
+    if (p.exiled) {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = "изгнан";
+      nameTd.appendChild(tag);
+    }
+    tr.appendChild(nameTd);
+
+    dates.forEach(d => {
+      const td = document.createElement("td");
+      td.className = "day-cell";
+      // удар и срыв — взаимоисключающие параметры в один день (см.
+      // scrape_topic.py), поэтому здесь достаточно проверить оба и
+      // отрисовать тот, что есть — оба одновременно не встретятся
+      if (p.attack.has(d)) {
+        const sq = document.createElement("div");
+        sq.className = "sq attack";
+        sq.title = `${name} — удар ${d}`;
+        td.appendChild(sq);
+      } else if (p.sryv.has(d)) {
+        const sq = document.createElement("div");
+        sq.className = "sq sryv";
+        sq.title = `${name} — срыв ${d}`;
+        td.appendChild(sq);
+      }
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  window.RENDER_READY = true;
+}
+
+main().catch(err => {
+  console.error("Ошибка построения календаря:", err);
+  window.RENDER_READY = true; // не подвешивать внешний скринер при ошибке
+});
+</script>
+</body>
+</html>

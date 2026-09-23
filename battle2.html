@@ -1264,16 +1264,12 @@ body {
 
 <script>
 // ── DATA ──
-let participants = [
-  { id: 1, name: "Игрок",         damage: 0, damageCurrent: 0, throws: [], level: 1, levelDamage: 0, hp: 100 },
-  { id: 2, name: "Конник Нарнии", damage: 0, damageCurrent: 0, throws: [], level: 2, levelDamage: 0, hp: 100 },
-  { id: 3, name: "Ева",           damage: 0, damageCurrent: 0, throws: [], level: 4, levelDamage: 0, hp: 100 },
-];
+let participants = [];
 // throws[] = array of [d1, d2] pairs
 
 let MAX_HP = 0;
 let currentHP = MAX_HP;
-let nextId = 4;
+let nextId = 1;
 let logEntries = [];
 let totalDamage = 0;
 let totalTurns = 0; // счётчик ходов (кол-во ударов ÷ число участников)
@@ -2171,6 +2167,33 @@ function renderParticipants() {
     tr.append(tdA, tdD);
     participantsBody.appendChild(tr);
   });
+  updateBossPanelCap();
+}
+
+// Держит панель босса (.boss-panel) в размере, который она имела при
+// ровно 3 участниках. При 1-3 участниках ничего не трогаем — работает
+// обычный взаимный stretch между .participants и .boss-panel (как и
+// раньше). С 4-го участника меряем фактическую высоту первых трёх
+// отрисованных строк и фиксируем её инлайн-высотой на .boss-panel —
+// явно заданная высота отменяет stretch именно для этого элемента,
+// так что он перестаёт расти, а панель участников продолжает расти
+// свободно, без обрезки и без скролла.
+function updateBossPanelCap() {
+  const participantsPanel = document.querySelector(".panel.participants");
+  const bossPanel = document.querySelector(".panel.boss-panel");
+  if (!participantsPanel || !bossPanel) return;
+  const rows = participantsBody.querySelectorAll("tr");
+  if (rows.length <= 3) {
+    bossPanel.style.height = ""; // вернуться к обычному взаимному stretch
+    return;
+  }
+  const panelTop = participantsPanel.getBoundingClientRect().top;
+  const thirdRowBottom = rows[2].getBoundingClientRect().bottom;
+  // хвост панели участников ниже последней строки: нижний паддинг
+  // .panel-inner (14px) + нижняя граница .panel (2px)
+  const TRAILING_CHROME = 16;
+  const capHeight = Math.ceil(thirdRowBottom - panelTop + TRAILING_CHROME);
+  bossPanel.style.height = capHeight + "px";
 }
 
 // ── ADAPTIVE TWO-WORD NAME ──
@@ -3062,6 +3085,42 @@ function forumJoin(name, date) {
   }
 }
 
+// Изгнание за неактивность 7+ дней (событие "exile" от scrape_topic.py).
+// В отличие от "Повержен" (hp=0, строка остаётся) — строка изгнанного
+// удаляется из боя целиком, а его предметы («лут») случайно
+// раздаются живым (hp > 0) оставшимся участникам, по одному розыгрышу
+// на каждую единицу предмета.
+function forumExile(name, date) {
+  const idx = participants.findIndex(
+    x => x.name.toLowerCase() === String(name || "").trim().toLowerCase()
+  );
+  if (idx === -1) return; // такого участника уже нет в бою — нечего изгонять
+  const exiled = participants[idx];
+
+  const alive = participants.filter((p, i) => i !== idx && (p.hp ?? 100) > 0);
+  const items = (exiled.items || []).slice();
+  let distributed = 0;
+  items.forEach(it => {
+    const count = it.count || 1;
+    for (let n = 0; n < count; n++) {
+      if (alive.length === 0) return;
+      const winner = alive[Math.floor(Math.random() * alive.length)];
+      giveItemToParticipant(winner, { name: it.name, src: it.src, id: it.id });
+      distributed++;
+    }
+  });
+
+  participants.splice(idx, 1);
+  renderParticipants();
+  const lootMsg = distributed
+    ? `лут (${distributed} шт.) роздан живым`
+    : "лута не было";
+  addLogEntry(
+    `<span class="src-forum">🏴 форум</span> ${exiled.name} изгнан за неактивность (7+ дней) — ${lootMsg}`,
+    date
+  );
+}
+
 // data: {events:[{id,date,author,target,command,post_id,is_admin_action}]}
 function ingestFeed(data) {
   const items = Array.isArray(data) ? data : (data && data.events) || [];
@@ -3080,6 +3139,7 @@ function ingestFeed(data) {
       if (ev.command === "attack")      forumAttack(who, date, viaAdmin);
       else if (ev.command === "sryv")   forumSryv(who, date, viaAdmin);
       else if (ev.command === "join")   forumJoin(who, date);
+      else if (ev.command === "exile")  forumExile(who, date);
       else addLogEntry(`<span class="src-forum">форум</span> ${who}: ${ev.command}`, date);
     });
   return applied;
