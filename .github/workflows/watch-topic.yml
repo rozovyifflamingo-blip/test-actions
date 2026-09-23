@@ -1,23 +1,35 @@
-name: Слежение за темой AntiO
+name: Тест эмулятора форума (скрипт + скриншот)
+
+# Запускается вручную из вкладки Actions на GitHub — кнопка "Run workflow".
+# Ничего не ставится на ваш компьютер: всё выполняется на сервере GitHub.
+# Настоящий форум antio.ru не трогается — скрипт ходит на локальный
+# эмулятор forum_emulator.py, поднятый тут же, на этом же раннере.
+#
+# Скриншот боя заливается по API на фотохостинг Chevereto (allwebs.ru) —
+# прямая ссылка на картинку появляется в логе шага и в Summary рана.
+# API-ключ захардкожен ниже по явной просьбе (аккаунт тестовый/пустышка).
+# Если репозиторий публичный — ключ виден всем в истории коммитов;
+# при необходимости просто перевыпусти его в настройках хостинга.
+#
+# Данные прогона (actions.json/state.json/topic.html + ссылка на скрин)
+# коммитятся в папку log/<дата-время>/ прямо в репозиторий — НЕ как
+# upload-artifact, так что не нужно ничего скачивать вручную.
 on:
-  schedule:
-    - cron: "*/5 * * * *"      # каждые 5 минут (GitHub может задерживать на пару минут)
   workflow_dispatch:
     inputs:
-      topic_id:
-        description: "ID темы (showtopic=...)"
+      posts_json:
+        description: >-
+          Тестовые посты, JSON-массив [{"author":"...","text":"..."}].
+          Публикуются по очереди, как на реальном форуме. Можно оставить
+          пример по умолчанию или вписать свои.
         required: false
-        default: "85035"
+        default: '[{"author":"Модератор","text":"Открываем тему."},{"author":"Ева","text":"+атака 21/09"},{"author":"Модератор","text":"Конник Нарнии +атака 22/09"},{"author":"Игрок","text":"!присоединяюсь"}]'
 
 permissions:
-  contents: write               # нужно, чтобы бот коммитил файлы обратно
-
-concurrency:
-  group: antio-watch
-  cancel-in-progress: false     # не обрывать запуск на середине
+  contents: write   # нужно, чтобы шаг ниже мог закоммитить log/ в репозиторий
 
 jobs:
-  watch:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout репозитория
@@ -31,77 +43,108 @@ jobs:
       - name: Установка Python-зависимостей
         run: pip install requests beautifulsoup4
 
-      - name: Проверка темы форума
-        env:
-          TOPIC_ID: ${{ github.event.inputs.topic_id || '85035' }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
-        run: python scrape_topic.py
-
-      # -- Решаем, есть ли реальные изменения -- от этого зависит,
-      #    запускать ли тяжёлый шаг со скриншотом
-      - name: Проверить наличие изменений
-        id: diff
-        run: |
-          # git diff не видит НОВЫЕ (untracked) файлы — а на первом запуске
-          # actions.json/state.json/topic.html как раз такие. Поэтому смотрим
-          # через git status, которая видит и новые, и изменённые файлы.
-          if [ -z "$(git status --porcelain -- actions.json state.json topic.html)" ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "Изменений нет — скриншот не нужен."
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Есть новые события — будет сделан скриншот."
-          fi
-
-      # -- Всё, что ниже, выполняется ТОЛЬКО при реальных изменениях --
       - name: Установка Node.js
-        if: steps.diff.outputs.has_changes == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Установка playwright-core (без скачивания Chromium — берём системный Chrome)
-        if: steps.diff.outputs.has_changes == 'true'
+      - name: Установка playwright-core (системный Chrome уже есть на раннере)
         run: npm install playwright-core@1
 
-      - name: Поднять локальный сервер со страницей боя
-        if: steps.diff.outputs.has_changes == 'true'
+      - name: Поднять эмулятор форума
         run: |
-          python3 -m http.server 8080 --directory . &
-          echo $! > server.pid
+          python3 forum_emulator.py 8000 &
+          echo $! > emulator.pid
           for i in $(seq 1 20); do
-            curl -sf http://localhost:8080/battle2.html > /dev/null && break
+            curl -sf http://127.0.0.1:8000/ > /dev/null && break
             sleep 0.5
           done
 
-      - name: Сделать скриншоты battle2.html и calendar.html
-        if: steps.diff.outputs.has_changes == 'true'
+      - name: Опубликовать тестовые посты по очереди
         env:
-          SCREENSHOT_URL: "http://localhost:8080/battle2.html"
-          SCREENSHOT_OUT: "battle_preview.png"
-          SCREENSHOT_URL_CALENDAR: "http://localhost:8080/calendar.html"
-          SCREENSHOT_OUT_CALENDAR: "calendar_preview.png"
+          POSTS_JSON: ${{ inputs.posts_json }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request, urllib.parse
+
+          posts = json.loads(os.environ["POSTS_JSON"])
+          for p in posts:
+              data = urllib.parse.urlencode({"author": p["author"], "text": p["text"]}).encode()
+              urllib.request.urlopen("http://127.0.0.1:8000/post", data=data)
+              print(f"опубликован пост: {p['author']}: {p['text']}")
+              time.sleep(1)
+          PY
+
+      - name: Скриншот battle2.html (тем же screenshot.js, что и в бою)
+        env:
+          SCREENSHOT_URL: "http://127.0.0.1:8000/battle2.html"
+          SCREENSHOT_OUT: "test_run/battle_preview.png"
         run: node screenshot.js
 
-      - name: Остановить локальный сервер
-        if: steps.diff.outputs.has_changes == 'true'
-        run: kill "$(cat server.pid)" 2>/dev/null || true
+      - name: Остановить эмулятор
+        if: always()
+        run: kill "$(cat emulator.pid)" 2>/dev/null || true
 
-      # -- Коммитим всё разом: и данные, и (если был) новый скриншот --
-      - name: Закоммитить изменения
+      - name: Залить скриншот на фотохостинг (Chevereto API)
+        id: upload
+        if: always()
+        env:
+          CHEVERETO_API_KEY: "chv_h7iX_1e84a730330d092a396a9d0d9d31d0a03f562212d72dbaad44ca595ac894fe03_8a04f4a069bd6ae9e88baecd9da8711685416ae14c1f4abd246063e59340188d"
         run: |
-          git config user.name  "antio-bot"
+          if [ ! -f test_run/battle_preview.png ]; then
+            echo "Скриншота нет — пропускаю заливку."
+            exit 0
+          fi
+          if [ -z "$CHEVERETO_API_KEY" ]; then
+            echo "::warning::Секрет CHEVERETO_API_KEY не задан — скриншот не залит на хостинг."
+            exit 0
+          fi
+          response=$(curl --fail-with-body -sS -X POST \
+            -H "X-API-Key: $CHEVERETO_API_KEY" \
+            -H "Content-Type: multipart/form-data" \
+            -F "source=@test_run/battle_preview.png" \
+            https://allwebs.ru/api/1/upload) || {
+              echo "::error::Заливка на фотохостинг не удалась"
+              echo "$response"
+              exit 1
+            }
+          echo "$response" > test_run/upload_response.json
+          url=$(echo "$response" | jq -r '.image.url // empty')
+          if [ -z "$url" ]; then
+            echo "::error::В ответе фотохостинга нет .image.url"
+            echo "$response"
+            exit 1
+          fi
+          echo "image_url=$url" >> "$GITHUB_OUTPUT"
+          echo "Ссылка на скриншот боя: $url"
+          {
+            echo "### 📸 Скриншот боя"
+            echo "$url"
+            echo ""
+            echo "![preview]($url)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Сохранить лог теста в репозитории (папка log/, не артефакт)
+        if: always()
+        env:
+          IMAGE_URL: ${{ steps.upload.outputs.image_url }}
+        run: |
+          git config user.name  "test-bot"
           git config user.email "actions@github.com"
-          # добавляем только нужные файлы (и только если они существуют) —
-          # чтобы не подхватить node_modules/package.json, оставшиеся
-          # от установки playwright-core
-          for f in actions.json state.json topic.html battle_preview.png calendar_preview.png; do
-            [ -f "$f" ] && git add -- "$f"
+          ts="$(date -u +'%Y-%m-%d_%H-%M-%S')"
+          dir="log/$ts"
+          mkdir -p "$dir"
+          for f in test_run/actions.json test_run/state.json test_run/topic.html test_run/upload_response.json; do
+            [ -f "$f" ] && cp "$f" "$dir/"
           done
+          if [ -n "$IMAGE_URL" ]; then
+            echo "$IMAGE_URL" > "$dir/screenshot_url.txt"
+          fi
+          git add "$dir"
           if git diff --cached --quiet; then
             echo "Нечего коммитить."
           else
-            git commit -m "Обновление темы $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git commit -m "Тест эмулятора: лог $ts"
             git pull --rebase --autostash
             git push
           fi
