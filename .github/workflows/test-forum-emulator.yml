@@ -4,6 +4,16 @@ name: Тест эмулятора форума (скрипт + скриншот)
 # Ничего не ставится на ваш компьютер: всё выполняется на сервере GitHub.
 # Настоящий форум antio.ru не трогается — скрипт ходит на локальный
 # эмулятор forum_emulator.py, поднятый тут же, на этом же раннере.
+#
+# Скриншот боя заливается по API на фотохостинг Chevereto (allwebs.ru) —
+# прямая ссылка на картинку появляется в логе шага и в Summary рана.
+# API-ключ захардкожен ниже по явной просьбе (аккаунт тестовый/пустышка).
+# Если репозиторий публичный — ключ виден всем в истории коммитов;
+# при необходимости просто перевыпусти его в настройках хостинга.
+#
+# Данные прогона (actions.json/state.json/topic.html + ссылка на скрин)
+# коммитятся в папку log/<дата-время>/ прямо в репозиторий — НЕ как
+# upload-artifact, так что не нужно ничего скачивать вручную.
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +24,9 @@ on:
           пример по умолчанию или вписать свои.
         required: false
         default: '[{"author":"Модератор","text":"Открываем тему."},{"author":"Ева","text":"+атака 21/09"},{"author":"Модератор","text":"Конник Нарнии +атака 22/09"},{"author":"Игрок","text":"!присоединяюсь"}]'
+
+permissions:
+  contents: write   # нужно, чтобы шаг ниже мог закоммитить log/ в репозиторий
 
 jobs:
   test:
@@ -72,12 +85,66 @@ jobs:
         if: always()
         run: kill "$(cat emulator.pid)" 2>/dev/null || true
 
-      - name: Загрузить результат как артефакт
-        uses: actions/upload-artifact@v4
-        with:
-          name: forum-emulator-test-result
-          path: |
-            test_run/battle_preview.png
-            test_run/actions.json
-            test_run/state.json
-            test_run/topic.html
+      - name: Залить скриншот на фотохостинг (Chevereto API)
+        id: upload
+        if: always()
+        env:
+          CHEVERETO_API_KEY: "chv_h7iX_1e84a730330d092a396a9d0d9d31d0a03f562212d72dbaad44ca595ac894fe03_8a04f4a069bd6ae9e88baecd9da8711685416ae14c1f4abd246063e59340188d"
+        run: |
+          if [ ! -f test_run/battle_preview.png ]; then
+            echo "Скриншота нет — пропускаю заливку."
+            exit 0
+          fi
+          if [ -z "$CHEVERETO_API_KEY" ]; then
+            echo "::warning::Секрет CHEVERETO_API_KEY не задан — скриншот не залит на хостинг."
+            exit 0
+          fi
+          response=$(curl --fail-with-body -sS -X POST \
+            -H "X-API-Key: $CHEVERETO_API_KEY" \
+            -H "Content-Type: multipart/form-data" \
+            -F "source=@test_run/battle_preview.png" \
+            https://allwebs.ru/api/1/upload) || {
+              echo "::error::Заливка на фотохостинг не удалась"
+              echo "$response"
+              exit 1
+            }
+          echo "$response" > test_run/upload_response.json
+          url=$(echo "$response" | jq -r '.image.url // empty')
+          if [ -z "$url" ]; then
+            echo "::error::В ответе фотохостинга нет .image.url"
+            echo "$response"
+            exit 1
+          fi
+          echo "image_url=$url" >> "$GITHUB_OUTPUT"
+          echo "Ссылка на скриншот боя: $url"
+          {
+            echo "### 📸 Скриншот боя"
+            echo "$url"
+            echo ""
+            echo "![preview]($url)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Сохранить лог теста в репозитории (папка log/, не артефакт)
+        if: always()
+        env:
+          IMAGE_URL: ${{ steps.upload.outputs.image_url }}
+        run: |
+          git config user.name  "test-bot"
+          git config user.email "actions@github.com"
+          ts="$(date -u +'%Y-%m-%d_%H-%M-%S')"
+          dir="log/$ts"
+          mkdir -p "$dir"
+          for f in test_run/actions.json test_run/state.json test_run/topic.html test_run/upload_response.json; do
+            [ -f "$f" ] && cp "$f" "$dir/"
+          done
+          if [ -n "$IMAGE_URL" ]; then
+            echo "$IMAGE_URL" > "$dir/screenshot_url.txt"
+          fi
+          git add "$dir"
+          if git diff --cached --quiet; then
+            echo "Нечего коммитить."
+          else
+            git commit -m "Тест эмулятора: лог $ts"
+            git pull --rebase --autostash
+            git push
+          fi
