@@ -1,24 +1,26 @@
 // screenshot.js
-// Открывает battle2.html локально, ждёт готовности данных и шрифтов,
-// компенсирует особенности рендеринга Linux (жирность/ClearType)
-// и сохраняет идеальный скриншот контейнера.
+// Открывает battle2.html локально (через уже поднятый http.server),
+// дожидается window.RENDER_READY, замораживает анимации и снимает
+// PNG всей видимой страницы — тот самый набор гарантий "точь-в-точь
+// как в браузере", описанный в переписке: фиксированный viewport,
+// готовые шрифты, применённые данные, никаких CSS-переходов в кадре.
+//
+// Использует playwright-core с системным Chrome (channel: "chrome"),
+// чтобы не тянуть отдельный бандлированный Chromium — на раннерах
+// GitHub Actions Chrome уже установлен.
 
 const { chromium } = require("playwright-core");
 
 const URL = process.env.SCREENSHOT_URL || "http://localhost:8080/battle2.html";
 const OUT = process.env.SCREENSHOT_OUT || "battle_preview.png";
 const VIEWPORT = { width: 1200, height: 900 };
-const DEVICE_SCALE_FACTOR = 1.25; // Масштаб 125% под экран вашего ноутбука
+const DEVICE_SCALE_FACTOR = 2;   // резкость для pixel-art шрифтов
 const READY_TIMEOUT_MS = 20000;
 
 async function main() {
   const browser = await chromium.launch({
-    channel: "chrome",
-    args: [
-      "--force-color-profile=srgb",
-      "--hide-scrollbars",
-      "--enable-font-antialiasing",
-    ],
+    channel: "chrome",             // системный Google Chrome, не отдельный Chromium
+    args: ["--force-color-profile=srgb", "--hide-scrollbars"],
   });
 
   try {
@@ -30,18 +32,17 @@ async function main() {
     console.log(`Открываю ${URL}`);
     await page.goto(URL, { waitUntil: "networkidle" });
 
-    // 1. Ждём сигнала от страницы: данные применились и всё отрисовалось
+    // 1. Ждём, пока страница сама скажет "я применила данные и отрисовалась"
     await page.waitForFunction(() => window.RENDER_READY === true, null, {
       timeout: READY_TIMEOUT_MS,
     });
 
-    // 2. Ждём реальной готовности шрифтов
+    // 2. Ждём готовности шрифтов (Press Start 2P, CGCHR — грузятся асинхронно)
     await page.evaluate(() => document.fonts && document.fonts.ready);
-    const isFontLoaded = await page.evaluate(() => document.fonts.check('11px "CGCHR"'));
-    console.log(`Шрифт CGCHR: ${isFontLoaded ? "загружен успешно" : "НЕ загружен (fallback)"}`);
 
-    // 3. Замораживаем анимации, прячем панель автобоя,
-    //    добавляем плотность шрифту (ClearType) и отодвигаем от рамки
+    // 3. Замораживаем анимации/переходы, чтобы не поймать HP-бар
+    //    или эффект удара в промежуточном кадре; плюс прячем панель
+    //    автобоя/скорости — она не нужна на превью
     await page.addStyleTag({
       content: `
         *, *::before, *::after {
@@ -49,25 +50,33 @@ async function main() {
           animation-duration: 0s !important;
           transition: none !important;
         }
-        .auto-bar { 
-          display: none !important; 
-        }
+        .auto-bar { display: none !important; }
 
-        /* Компенсация жирности шрифта на Linux и отступы от рамки */
+        /* Только для скриншота (в живом браузере это не грузится):
+           хром на раннере рендерит пиксельный шрифт ников тоньше и
+           ровно впритык к верхнему краю блока. Сдвигаем текст на
+           3px вниз, чтобы визуально совпадало с тем, что видно
+           в обычном браузере. */
         .avatar-name {
-          -webkit-text-stroke: 0.35px currentColor !important;
-          text-shadow: 0 0 0.5px currentColor !important;
-          padding: 4px 4px 2px !important;
+          padding-top: 6px !important; /* было 3px, +3px вниз */
         }
       `,
     });
 
-    // Пауза, чтобы стили гарантированно применились перед кадром
-    await page.waitForTimeout(150);
+    // небольшая пауза, чтобы стиль точно применился перед снимком.
+    // battle2.html сам откладывает часть эффектов удара (появление
+    // кубиков, применение урона, перерисовку карточки) на 180-240мс
+    // через внутренние setTimeout — ждём с запасом дольше этого,
+    // иначе кадр ловится посреди отложенной отрисовки.
+    await page.waitForTimeout(700);
 
-    // 4. Снимаем именно блок .container (без лишней пустоты снизу)
+    // Снимаем не всю страницу (там пустое пространство внизу, размер
+    // которого меняется в зависимости от числа участников), а именно
+    // .container — обёртку всего контента. Playwright сам подгоняет
+    // кадр под фактическую высоту элемента, так что "лишний" низ
+    // отрезается автоматически, сколько бы участников ни было.
     await page.locator(".container").screenshot({ path: OUT });
-    console.log(`Скриншот успешно сохранён: ${OUT}`);
+    console.log(`Скриншот сохранён: ${OUT}`);
   } finally {
     await browser.close();
   }
