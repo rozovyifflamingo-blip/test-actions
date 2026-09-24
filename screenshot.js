@@ -12,7 +12,7 @@
 
 const { chromium } = require("playwright-core");
 
-const VIEWPORT = { width: 1200, height: 900 };
+const VIEWPORT = { width: 1536, height: 735 };   // = viewport реального браузера (1920px при масштабе 125%)
 const DEVICE_SCALE_FACTOR = 2;   // резкость для pixel-art шрифтов
 const READY_TIMEOUT_MS = 20000;
 
