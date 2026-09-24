@@ -1,0 +1,84 @@
+{
+  "topic_id": "1",
+  "events": [
+    {
+      "id": "2:start:0",
+      "post_id": "2",
+      "pos": 0,
+      "author": "Модератор",
+      "target": "Модератор",
+      "command": "start",
+      "date": "2026-09-24",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!старт",
+      "post_time": "24.09.2026 - 05:09"
+    },
+    {
+      "id": "3:join:0",
+      "post_id": "3",
+      "pos": 0,
+      "author": "Ева",
+      "target": "Ева",
+      "command": "join",
+      "date": "2026-09-21",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!присоединяюсь",
+      "post_time": "21.09.2026 - 23:00"
+    },
+    {
+      "id": "4:attack:0",
+      "post_id": "4",
+      "pos": 0,
+      "author": "Ева",
+      "target": "Ева",
+      "command": "attack",
+      "date": "2026-09-21",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 21.09 +атака 22.09",
+      "post_time": "22.09.2026 - 10:05"
+    },
+    {
+      "id": "4:attack:13",
+      "post_id": "4",
+      "pos": 13,
+      "author": "Ева",
+      "target": "Ева",
+      "command": "attack",
+      "date": "2026-09-22",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 21.09 +атака 22.09",
+      "post_time": "22.09.2026 - 10:05"
+    },
+    {
+      "id": "5:join:0",
+      "post_id": "5",
+      "pos": 0,
+      "author": "адольф",
+      "target": "адольф",
+      "command": "join",
+      "date": "2026-09-23",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!присоединяюсь",
+      "post_time": "23.09.2026 - 12:00"
+    },
+    {
+      "id": "6:sryv:0",
+      "post_id": "6",
+      "pos": 0,
+      "author": "адольф",
+      "target": "адольф",
+      "command": "sryv",
+      "date": "2026-09-23",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 23.09 +атака",
+      "post_time": "24.09.2026 - 12:00"
+    }
+  ],
+  "updated": "2026-09-24T05:09:15+03:00"
+}
