@@ -26,6 +26,7 @@
 import html
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -61,13 +62,46 @@ def save_posts(posts):
         json.dump(posts, f, ensure_ascii=False, indent=2)
 
 
-def add_post(author, text):
+def build_ts(date_str, time_str):
+    """Собирает штамп поста "DD.MM.YYYY - HH:MM" из полей формы/JSON.
+    Пустая дата → штамп "сейчас" (как раньше). Указанная дата обязана
+    быть в формате ДД.ММ.ГГГГ (год из 4 цифр, чтобы не путать с форматом
+    команд "+атака 21/09" внутри текста поста). Возвращает (ts, error)."""
+    date_str = (date_str or "").strip()
+    time_str = (time_str or "").strip()
+
+    if not date_str:
+        return datetime.now(TZ).strftime("%d.%m.%Y - %H:%M"), None
+
+    m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$", date_str)
+    if not m:
+        return None, f'Дата поста "{date_str}" не в формате ДД.ММ.ГГГГ (например 21.09.2026)'
+    day, month, year = (int(x) for x in m.groups())
+
+    if not time_str:
+        time_str = "12:00"
+    tm = re.match(r"^(\d{1,2}):(\d{2})$", time_str)
+    if not tm:
+        return None, f'Время поста "{time_str}" не в формате ЧЧ:ММ (например 14:30)'
+    hour, minute = (int(x) for x in tm.groups())
+
+    try:
+        dt = datetime(year, month, day, hour, minute, tzinfo=TZ)
+    except ValueError:
+        return None, f'Дата/время поста "{date_str} {time_str}" не существует в календаре'
+
+    return dt.strftime("%d.%m.%Y - %H:%M"), None
+
+
+def add_post(author, text, date_str="", time_str=""):
+    ts, error = build_ts(date_str, time_str)
+    if error:
+        return load_posts(), error
     posts = load_posts()
     new_id = (posts[-1]["id"] + 1) if posts else 1
-    ts = datetime.now(TZ).strftime("%d.%m.%Y - %H:%M")
     posts.append({"id": new_id, "author": author.strip() or "Аноним", "text": text, "ts": ts})
     save_posts(posts)
-    return posts
+    return posts, None
 
 
 # ── запуск настоящего scrape_topic.py ──
@@ -113,7 +147,7 @@ def render_forum_page(posts_slice):
 
 
 # ── HTML: страница управления эмулятором ──
-def render_admin_page():
+def render_admin_page(error=None):
     posts = load_posts()
     rows = "".join(
         f'<div class="p"><b>{html.escape(p["author"])}</b> '
@@ -144,13 +178,28 @@ button{{margin-top:12px;padding:10px 16px;border:none;border-radius:4px;backgrou
 a{{color:#7fb3e0}}
 .links{{margin-top:16px;font-size:13px}}
 form{{border-bottom:1px solid #4a3f2a;padding-bottom:16px;margin-bottom:16px}}
+.row{{display:flex;gap:10px}}
+.row > div{{flex:1}}
+.err{{background:#3a1414;border:1px solid #7a2c2c;color:#f0b8b8;border-radius:4px;padding:8px 10px;margin-bottom:14px;font-size:13px}}
 </style></head><body><div class="wrap">
 <h1>Эмулятор форума АнтиО</h1>
 <div class="hint">{admin_hint}. Каждый новый пост сразу прогоняется через настоящий scrape_topic.py (cwd = test_run/, боевые файлы в корне репо не трогаются).</div>
+{f'<div class="err">⚠ {html.escape(error)}</div>' if error else ''}
 
 <form method="post" action="/post">
   <label>Автор поста</label>
   <input type="text" name="author" placeholder="Например: Ева" required>
+  <div class="row">
+    <div>
+      <label>Дата поста (необязательно)</label>
+      <input type="text" name="date" placeholder="ДД.ММ.ГГГГ, например 21.09.2026">
+    </div>
+    <div>
+      <label>Время поста (необязательно)</label>
+      <input type="text" name="time" placeholder="ЧЧ:ММ, например 14:30">
+    </div>
+  </div>
+  <div class="hint" style="margin:6px 0 0">Пусто = штамп поста ставится "сейчас". Дата задаёт время самого поста на форуме (то, что читает scrape_topic.py), а НЕ дату команды внутри текста (её по-прежнему пишете справа от команды, например "+атака 21/09").</div>
   <label>Текст поста</label>
   <textarea name="text" placeholder="+атака 21/09&#10;или !срыв&#10;или !присоединяюсь"></textarea>
   <button type="submit">Опубликовать пост</button>
@@ -242,9 +291,14 @@ class Handler(BaseHTTPRequestHandler):
         form = parse_qs(body)
         author = (form.get("author", [""])[0]).strip()
         text = (form.get("text", [""])[0])
+        date_str = (form.get("date", [""])[0])
+        time_str = (form.get("time", [""])[0])
 
         with lock:
-            add_post(author, text)
+            _, error = add_post(author, text, date_str, time_str)
+            if error:
+                self._send(400, render_admin_page(error=error))
+                return
             port = self.server.server_address[1]
             LAST_LOG = run_scrape(port)
 
