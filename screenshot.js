@@ -30,7 +30,7 @@ const TARGET_CALENDAR_OUT = process.env.SCREENSHOT_OUT_CALENDAR || "calendar_pre
 // если явно поставить SCREENSHOT_SKIP_CALENDAR=1 — второй снимок не делаем
 const SKIP_CALENDAR = process.env.SCREENSHOT_SKIP_CALENDAR === "1";
 
-async function shootPage(browser, url, out) {
+async function shootPage(browser, url, out, { transparent = false } = {}) {
   const page = await browser.newPage({
     viewport: VIEWPORT,
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
@@ -84,8 +84,11 @@ async function shootPage(browser, url, out) {
     // кадр под фактическую высоту элемента, так что "лишний" низ
     // отрезается автоматически, сколько бы участников ни было.
     // (У calendar.html тот же класс .container на обёртке — тот же
-    // приём работает без изменений.)
-    await page.locator(".container").screenshot({ path: out });
+    // приём работает без изменений.) Для calendar.html дополнительно
+    // просят прозрачный фон вокруг таблицы: omitBackground убирает
+    // белую подложку Chromium там, где страница сама ничего не
+    // закрасила (сама таблица красится своим фоном и не страдает).
+    await page.locator(".container").screenshot({ path: out, omitBackground: transparent });
     console.log(`Скриншот сохранён: ${out}`);
   } finally {
     await page.close();
@@ -103,7 +106,7 @@ async function main() {
 
     if (!SKIP_CALENDAR) {
       try {
-        await shootPage(browser, TARGET_CALENDAR_URL, TARGET_CALENDAR_OUT);
+        await shootPage(browser, TARGET_CALENDAR_URL, TARGET_CALENDAR_OUT, { transparent: true });
       } catch (e) {
         // Календарь — дополнение, а не критичная часть; если его снять
         // не удалось (например файла пока нет на раннере), не валим

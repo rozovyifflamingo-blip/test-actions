@@ -16,22 +16,20 @@
     --gold: #e5c158;
     --ok: #2a7a2a;
     --bad: #c03030;
-    --exile: #a04848;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); }
+  html, body { margin: 0; padding: 0; background: transparent; }
   body {
     color: var(--text);
     font: 13px/1.4 -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     padding: 20px;
   }
   .container { max-width: 100%; }
-  h1 { font-size: 16px; color: var(--gold); margin: 0 0 4px; letter-spacing: 0.5px; }
-  .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
   .legend { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; font-size: 12px; color: var(--muted); }
   .legend .sq { width: 10px; height: 10px; display: inline-block; border-radius: 1px; margin-right: 5px; vertical-align: -1px; }
   .wrap {
-    display: inline-block;
+    display: table;
+    margin: 0 auto;
     max-width: 100%;
     overflow-x: auto;
     border: 1px solid var(--border-accent);
@@ -49,11 +47,6 @@
     text-align: left; white-space: nowrap; font-weight: 600;
     position: sticky; left: 0;
   }
-  .name-cell.exiled { color: var(--exile); }
-  .name-cell .tag {
-    font-size: 9px; color: var(--exile); margin-left: 6px;
-    font-weight: 400; text-transform: uppercase; letter-spacing: 0.5px;
-  }
   .day-cell { width: 18px; height: 18px; }
   .sq { width: 10px; height: 10px; margin: 4px auto; border-radius: 1px; }
   .sq.attack { background: var(--ok); }
@@ -63,12 +56,9 @@
 </head>
 <body>
 <div class="container">
-  <h1>Календарь активности</h1>
-  <div class="sub" id="sub">Загрузка…</div>
   <div class="legend" id="legend" style="display:none">
     <span><span class="sq attack"></span>удар</span>
     <span><span class="sq sryv"></span>срыв</span>
-    <span><span class="tag" style="color:var(--exile)">изгнан</span> — неактивен 7+ дней</span>
   </div>
   <div class="wrap" id="wrap" style="display:none"><table id="cal"></table></div>
   <div class="empty" id="empty" style="display:none">Пока нет данных — календарь заполнится после первых команд с форума.</div>
@@ -106,8 +96,6 @@ async function main() {
     return byName.get(key);
   }
 
-  let minDate = null, maxDate = null;
-
   events.forEach(ev => {
     const name = (ev.target || ev.author || "").trim();
     if (!name) return;
@@ -118,14 +106,29 @@ async function main() {
     const p = ensure(name);
     if (!p || !d) return;
     p[ev.command].add(d);
-    if (!minDate || d < minDate) minDate = d;
-    if (!maxDate || d > maxDate) maxDate = d;
   });
+
+  // изгнанные за неактивность убираются из календаря целиком, без
+  // всякой пометки в таблице — как будто их тут никогда не было
+  for (const [name, p] of byName) {
+    if (p.exiled) byName.delete(name);
+  }
+
+  let minDate = null, maxDate = null;
+  for (const p of byName.values()) {
+    for (const d of p.attack) {
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+    for (const d of p.sryv) {
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+  }
 
   const names = [...byName.keys()].sort((a, b) => a.localeCompare(b, "ru"));
 
   if (names.length === 0) {
-    document.getElementById("sub").textContent = "";
     document.getElementById("empty").style.display = "";
     window.RENDER_READY = true;
     return;
@@ -143,8 +146,6 @@ async function main() {
     cur.setDate(cur.getDate() + 1);
   }
 
-  document.getElementById("sub").textContent =
-    `${minDate} — ${maxDate} · участников: ${names.length}`;
   document.getElementById("legend").style.display = "";
   document.getElementById("wrap").style.display = "";
 
@@ -168,14 +169,8 @@ async function main() {
     const tr = document.createElement("tr");
 
     const nameTd = document.createElement("td");
-    nameTd.className = "name-cell" + (p.exiled ? " exiled" : "");
+    nameTd.className = "name-cell";
     nameTd.textContent = name;
-    if (p.exiled) {
-      const tag = document.createElement("span");
-      tag.className = "tag";
-      tag.textContent = "изгнан";
-      nameTd.appendChild(tag);
-    }
     tr.appendChild(nameTd);
 
     dates.forEach(d => {

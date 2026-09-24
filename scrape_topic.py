@@ -3,9 +3,19 @@
 Запускается по крону каждые 5 минут в GitHub Actions через прокси.
 
 Команды в тексте поста:
+  !старт          — открывает бой; до этой команды ничего из
+                    перечисленного ниже не воспринимается вовсе
   +атака          — участник наносит удар
   !срыв           — на участника накладывается предмет «Урон −25 HP»
   !присоединяюсь  — автор поста добавляется в участники боя
+
+!старт — разовый переключатель на всю тему (хранится в state.json,
+не сбрасывается сам). Пока он не встретился ни разу, +атака/!срыв/
+!присоединяюсь из ЛЮБЫХ постов, в т.ч. более ранних по позиции
+внутри ТОГО ЖЕ поста, где !старт стоит позже по тексту, — просто
+не создают событий: как будто игроки обсуждали механику, а не
+играли. Это отсекает случайные вкрапления команд в обсуждении до
+официального начала боя.
 
 Дата команды берётся СПРАВА от слова (например «+атака 21/09»).
   - Валидная дата (год >= 2026) — событие записывается на неё.
@@ -88,7 +98,12 @@ COMMANDS = [
     ("attack", re.compile(r"\+\s*атак\w*", re.IGNORECASE)),
     ("sryv",   re.compile(r"!\s*срыв\w*", re.IGNORECASE)),
     ("join",   re.compile(r"!\s*присоедин\w*", re.IGNORECASE)),
+    ("start",  re.compile(r"!\s*старт\w*", re.IGNORECASE)),
 ]
+# игровые команды, которые вообще не воспринимаются до !старт —
+# "start" в этот список не входит: это сам переключатель, а не то,
+# что он включает/выключает
+GATED_COMMANDS = {"attack", "sryv", "join"}
 # удар и срыв — самостоятельные параметры: не могут стоять одновременно
 # в один день у одного и того же лица (см. извлечение событий ниже)
 OTHER_COMMAND = {"attack": "sryv", "sryv": "attack"}
@@ -254,7 +269,7 @@ def find_left_target(left_text, known_names):
 
 
 # ── разбор команд одного поста ──
-def extract_events(post, today, admin_name, known_names, used_dates, join_dates, exiled):
+def extract_events(post, today, admin_name, known_names, used_dates, join_dates, exiled, battle_state):
     """
     today: собственная дата ЭТОГО поста (см. parse_post_datetime) — не
     системные часы. Служит и дефолтным годом внутри normalize_date, и
@@ -268,6 +283,13 @@ def extract_events(post, today, admin_name, known_names, used_dates, join_dates,
     exiled: set(name_lower) — кто изгнан на начало текущего прогона.
     Используется только для чтения (кроме сброса при повторном join —
     см. ниже), фактическое снятие изгнания делает unexile_active_names.
+    battle_state: dict {"started": bool} — общий на весь прогон
+    (и персистентный между прогонами через state.json) флаг "!старт
+    уже был". Пока False, join/атака/срыв из ЛЮБОГО поста, включая
+    более ранние по позиции внутри ЭТОГО ЖЕ поста, если !старт стоит
+    после них в тексте, — не создают событий вовсе: чекер их просто
+    не видит, как будто их не было. Обновляется на месте, как только
+    внутри текущего поста встречается !старт.
     """
     events = []
     text = post["text"]
@@ -283,6 +305,28 @@ def extract_events(post, today, admin_name, known_names, used_dates, join_dates,
     for idx, (start, end, command) in enumerate(hits_all):
         prev_end = hits_all[idx - 1][1] if idx else 0
         next_start = hits_all[idx + 1][0] if idx + 1 < len(hits_all) else len(text)
+
+        if command == "start":
+            battle_state["started"] = True
+            events.append({
+                "id": f"{post['post_id']}:{command}:{start}",
+                "post_id": post["post_id"],
+                "pos": start,
+                "author": author,
+                "target": author,
+                "command": "start",
+                "date": today_str,
+                "date_from_text": False,
+                "is_admin_action": False,
+                "context": text[max(0, start - 20):end + 20].replace("\n", " ").strip(),
+                "post_time": post["timestamp"] or post["time_text"],
+            })
+            continue
+
+        # ── до !старт бой считается не начатым: join/атака/срыв просто
+        #    не воспринимаются, как будто их вообще не писали ──
+        if command in GATED_COMMANDS and not battle_state["started"]:
+            continue
 
         if command == "join":
             name_l = author.strip().lower()
@@ -513,6 +557,9 @@ def main():
     # изгнанные грузятся здесь же (не позже), чтобы join-обработка внутри
     # цикла ниже могла корректно определить «возврат после изгнания»
     exiled = set(state.get("exiled", []))
+    # !старт — разовый переключатель на всю тему: пока False, join/атака/
+    # срыв не воспринимаются вообще, откуда бы они ни шли
+    battle_state = {"started": bool(state.get("battle_started", False))}
 
     admin_name = state.get("admin")
     if not admin_name:
@@ -552,7 +599,7 @@ def main():
             # с форума, а не часы машины, где крутится скрипт
             post_today = parse_post_datetime(p) or system_now
             for ev in extract_events(p, post_today, admin_name, known_names,
-                                      used_dates, join_dates, exiled):
+                                      used_dates, join_dates, exiled, battle_state):
                 if ev["id"] not in known_event_ids:
                     known_event_ids.add(ev["id"])
                     new_events.append(ev)
@@ -610,6 +657,7 @@ def main():
         "seen_post_ids": sorted(seen_ids, key=lambda x: int(x) if x.isdigit() else 0),
         "known_names": sorted(known_names),
         "join_dates": join_dates,
+        "battle_started": battle_state["started"],
         "exiled": sorted(exiled),
         "posts": all_posts,
         "checked_at": datetime.now(TZ).isoformat(timespec="seconds"),
