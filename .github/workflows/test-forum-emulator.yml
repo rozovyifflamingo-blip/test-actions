@@ -103,6 +103,44 @@ jobs:
         if: always()
         run: kill "$(cat emulator.pid)" 2>/dev/null || true
 
+      # Проверка Cloudflare Worker: те же три картинки заливаются на
+      # постоянные URL. ВНИМАНИЕ: это боевые адреса — тестовый прогон
+      # перезапишет их, следующее изменение темы на форуме вернёт всё как было.
+      - name: Залить скриншоты на Cloudflare Worker (проверка постоянных URL)
+        env:
+          IMG_WORKER_URL: ${{ secrets.IMG_WORKER_URL }}
+          IMG_WORKER_TOKEN: ${{ secrets.IMG_WORKER_TOKEN }}
+        run: |
+          if [ -z "${IMG_WORKER_URL:-}" ] || [ -z "${IMG_WORKER_TOKEN:-}" ]; then
+            echo "::warning::Секреты IMG_WORKER_URL / IMG_WORKER_TOKEN не заданы — пропускаю"
+            exit 0
+          fi
+          base="${IMG_WORKER_URL%/}"
+
+          push() {
+            file="$1"; name="$2"
+            if [ ! -f "$file" ]; then
+              echo "::warning::Нет файла $file — $name.png не залит"
+              return 0
+            fi
+            code=$(curl -sS -o worker_resp.txt -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer $IMG_WORKER_TOKEN" \
+              -H "Content-Type: image/png" \
+              --data-binary "@$file" "$base/$name.png") || code=000
+            if [ "$code" = "200" ]; then
+              echo "OK: $base/$name.png"
+              echo "- $base/$name.png" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::Не удалось залить $name.png (HTTP $code): $(cat worker_resp.txt 2>/dev/null)"
+            fi
+            rm -f worker_resp.txt
+          }
+
+          echo "### Cloudflare Worker: постоянные URL" >> "$GITHUB_STEP_SUMMARY"
+          push test_run/battle_preview.png   battle
+          push test_run/calendar_preview.png calendar
+          push test_run/battle_log.png       log
+
       - name: Залить скриншоты на фотохостинг (Chevereto API)
         id: upload
         if: always()
