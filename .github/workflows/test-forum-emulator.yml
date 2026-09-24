@@ -19,9 +19,13 @@ on:
     inputs:
       posts_json:
         description: >-
-          Тестовые посты, JSON-массив [{"author":"...","text":"..."}].
+          Тестовые посты, JSON-массив [{"author":"...","text":"...",
+          "date":"ДД.ММ.ГГГГ","time":"ЧЧ:ММ"}]. Поля date/time
+          необязательны (пусто = штамп поста "сейчас") и задают ШТАМП
+          самого поста на форуме, а не дату команды внутри текста.
           Публикуются по очереди, как на реальном форуме. Можно оставить
-          пример по умолчанию или вписать свои.
+          пример по умолчанию или вписать свои — удобнее всего собрать
+          строку через отдельный HTML-конструктор постов.
         required: false
         default: '[{"author":"Модератор","text":"Открываем тему."},{"author":"Ева","text":"+атака 21/09"},{"author":"Модератор","text":"Конник Нарнии +атака 22/09"},{"author":"Игрок","text":"!присоединяюсь"}]'
 
@@ -65,13 +69,25 @@ jobs:
           POSTS_JSON: ${{ inputs.posts_json }}
         run: |
           python3 - <<'PY'
-          import json, os, time, urllib.request, urllib.parse
+          import json, os, sys, time, urllib.request, urllib.parse, urllib.error
 
           posts = json.loads(os.environ["POSTS_JSON"])
           for p in posts:
-              data = urllib.parse.urlencode({"author": p["author"], "text": p["text"]}).encode()
-              urllib.request.urlopen("http://127.0.0.1:8000/post", data=data)
-              print(f"опубликован пост: {p['author']}: {p['text']}")
+              fields = {
+                  "author": p["author"],
+                  "text": p["text"],
+                  "date": p.get("date", ""),
+                  "time": p.get("time", ""),
+              }
+              data = urllib.parse.urlencode(fields).encode()
+              stamp = f" ({fields['date']} {fields['time']})".rstrip() if fields["date"] else ""
+              try:
+                  urllib.request.urlopen("http://127.0.0.1:8000/post", data=data)
+                  print(f"опубликован пост: {p['author']}: {p['text']}{stamp}")
+              except urllib.error.HTTPError as e:
+                  body = e.read().decode("utf-8", "replace")
+                  print(f"::error::пост отклонён эмулятором ({p['author']}: {p['text']}{stamp}): HTTP {e.code}")
+                  sys.exit(1)
               time.sleep(1)
           PY
 
