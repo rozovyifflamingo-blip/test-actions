@@ -83,6 +83,45 @@ jobs:
           SCREENSHOT_OUT_CALENDAR: "calendar_preview.png"
         run: node screenshot.js
 
+      # -- Заливаем три картинки на Cloudflare Worker: у каждой свой
+      #    постоянный URL, а содержимое перезаписывается при каждом прогоне.
+      #    Нужны секреты репозитория IMG_WORKER_URL (например
+      #    https://battle-images.<аккаунт>.workers.dev) и IMG_WORKER_TOKEN.
+      #    Сбой заливки не валит workflow — только предупреждение.
+      - name: Залить скриншоты на Cloudflare Worker (постоянные URL)
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          IMG_WORKER_URL: ${{ secrets.IMG_WORKER_URL }}
+          IMG_WORKER_TOKEN: ${{ secrets.IMG_WORKER_TOKEN }}
+        run: |
+          if [ -z "${IMG_WORKER_URL:-}" ] || [ -z "${IMG_WORKER_TOKEN:-}" ]; then
+            echo "::warning::Секреты IMG_WORKER_URL / IMG_WORKER_TOKEN не заданы — заливку на Worker пропускаю"
+            exit 0
+          fi
+          base="${IMG_WORKER_URL%/}"
+
+          push() {
+            file="$1"; name="$2"
+            if [ ! -f "$file" ]; then
+              echo "Нет файла $file — пропускаю $name.png"
+              return 0
+            fi
+            code=$(curl -sS -o worker_resp.txt -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer $IMG_WORKER_TOKEN" \
+              -H "Content-Type: image/png" \
+              --data-binary "@$file" "$base/$name.png") || code=000
+            if [ "$code" = "200" ]; then
+              echo "OK: $base/$name.png"
+            else
+              echo "::warning::Не удалось залить $name.png (HTTP $code): $(cat worker_resp.txt 2>/dev/null)"
+            fi
+            rm -f worker_resp.txt
+          }
+
+          push battle_preview.png   battle
+          push calendar_preview.png calendar
+          push battle_log.png       log
+
       - name: Остановить локальный сервер
         if: steps.diff.outputs.has_changes == 'true'
         run: kill "$(cat server.pid)" 2>/dev/null || true
@@ -95,7 +134,7 @@ jobs:
           # добавляем только нужные файлы (и только если они существуют) —
           # чтобы не подхватить node_modules/package.json, оставшиеся
           # от установки playwright-core
-          for f in actions.json state.json topic.html battle_preview.png calendar_preview.png; do
+          for f in actions.json state.json topic.html battle_preview.png battle_log.png calendar_preview.png; do
             [ -f "$f" ] && git add -- "$f"
           done
           if git diff --cached --quiet; then
