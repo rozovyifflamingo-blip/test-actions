@@ -1,0 +1,35 @@
+name: Деплой Cloudflare Worker (постоянные URL для картинок)
+
+# Запускается вручную (кнопка "Run workflow") и автоматически при
+# изменении файлов в папке worker/. Ничего ставить на компьютер не нужно —
+# деплой идёт с сервера GitHub.
+#
+# Нужны секреты репозитория:
+#   CLOUDFLARE_API_TOKEN   — токен Cloudflare с шаблоном "Edit Cloudflare Workers"
+#   CLOUDFLARE_ACCOUNT_ID  — ID аккаунта (правая колонка на главной странице Workers)
+#   IMG_WORKER_TOKEN       — ваш придуманный пароль для заливки картинок;
+#                            он же уходит в секрет UPLOAD_TOKEN самого Worker
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "worker/**"
+      - ".github/workflows/deploy-worker.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Деплой Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: worker
+          secrets: |
+            UPLOAD_TOKEN
+        env:
+          UPLOAD_TOKEN: ${{ secrets.IMG_WORKER_TOKEN }}
