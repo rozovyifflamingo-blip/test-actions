@@ -1,0 +1,58 @@
+{
+  "topic_id": "1",
+  "events": [
+    {
+      "id": "2:start:0",
+      "post_id": "2",
+      "pos": 0,
+      "author": "Модератор",
+      "target": "Модератор",
+      "command": "start",
+      "date": "2026-09-24",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!старт",
+      "post_time": "24.09.2026 - 05:05"
+    },
+    {
+      "id": "3:join:0",
+      "post_id": "3",
+      "pos": 0,
+      "author": "Ева",
+      "target": "Ева",
+      "command": "join",
+      "date": "2026-09-10",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!присоединяюсь",
+      "post_time": "10.09.2026 - 10:00"
+    },
+    {
+      "id": "Ева:exile:2026-09-24",
+      "post_id": null,
+      "pos": null,
+      "author": null,
+      "target": "Ева",
+      "command": "exile",
+      "date": "2026-09-24",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "неактивен 14 дн. подряд",
+      "post_time": null
+    },
+    {
+      "id": "4:attack:0",
+      "post_id": "4",
+      "pos": 0,
+      "author": "Ева",
+      "target": "Ева",
+      "command": "attack",
+      "date": "2026-09-11",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака",
+      "post_time": "12.09.2026 - 10:05"
+    }
+  ],
+  "updated": "2026-09-24T05:05:40+03:00"
+}
