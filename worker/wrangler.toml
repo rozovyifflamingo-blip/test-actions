@@ -1,0 +1,12 @@
+name = "battle-images"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[[durable_objects.bindings]]
+name = "IMAGES"
+class_name = "ImageStore"
+
+# SQLite-хранилище доступно на бесплатном плане (карта не нужна)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ImageStore"]
