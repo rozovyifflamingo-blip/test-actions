@@ -75,106 +75,137 @@ jobs:
               time.sleep(1)
           PY
 
-      - name: Скриншот battle2.html (тем же screenshot.js, что и в бою)
+      - name: Скриншоты battle2.html и calendar.html (тем же screenshot.js, что и в бою)
         env:
           SCREENSHOT_URL: "http://127.0.0.1:8000/battle2.html"
           SCREENSHOT_OUT: "test_run/battle_preview.png"
+          SCREENSHOT_URL_CALENDAR: "http://127.0.0.1:8000/calendar.html"
+          SCREENSHOT_OUT_CALENDAR: "test_run/calendar_preview.png"
         run: node screenshot.js
 
       - name: Остановить эмулятор
         if: always()
         run: kill "$(cat emulator.pid)" 2>/dev/null || true
 
-      - name: Залить скриншот на фотохостинг (Chevereto API)
+      - name: Залить скриншоты на фотохостинг (Chevereto API)
         id: upload
         if: always()
         env:
           CHEVERETO_API_KEY: "chv_h7iX_1e84a730330d092a396a9d0d9d31d0a03f562212d72dbaad44ca595ac894fe03_8a04f4a069bd6ae9e88baecd9da8711685416ae14c1f4abd246063e59340188d"
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          if [ ! -f test_run/battle_preview.png ]; then
-            echo "Скриншота нет — пропускаю заливку."
-            exit 0
-          fi
+          # Заливает один файл: сначала allwebs.ru (Chevereto, через прокси),
+          # при неудаче — catbox.moe без ключа/прокси. Печатает получившийся
+          # URL в stdout (и ничего больше), пишет ответ хостинга в $2.
+          upload_image() {
+            local file="$1" response_out="$2"
+            local url=""
 
-          url=""
+            if [ -n "$CHEVERETO_API_KEY" ]; then
+              proxy_args=()
+              if [ -n "$PROXY_URL" ]; then
+                p="$PROXY_URL"
+                case "$p" in
+                  http://*|https://*) ;;
+                  *) p="http://$p" ;;
+                esac
+                proxy_args=(--proxy "$p")
+              fi
 
-          # ── 1) Основной хостинг: allwebs.ru (Chevereto), через прокси ──
-          if [ -n "$CHEVERETO_API_KEY" ]; then
-            proxy_args=()
-            if [ -n "$PROXY_URL" ]; then
-              p="$PROXY_URL"
-              case "$p" in
-                http://*|https://*) ;;
-                *) p="http://$p" ;;
-              esac
-              proxy_args=(--proxy "$p")
-            fi
+              response=$(curl --fail-with-body -sS --connect-timeout 20 "${proxy_args[@]}" -X POST \
+                -H "X-API-Key: $CHEVERETO_API_KEY" \
+                -H "Content-Type: multipart/form-data" \
+                -F "source=@$file" \
+                https://allwebs.ru/api/1/upload) && main_status=0 || main_status=$?
 
-            response=$(curl --fail-with-body -sS --connect-timeout 20 "${proxy_args[@]}" -X POST \
-              -H "X-API-Key: $CHEVERETO_API_KEY" \
-              -H "Content-Type: multipart/form-data" \
-              -F "source=@test_run/battle_preview.png" \
-              https://allwebs.ru/api/1/upload) && main_status=0 || main_status=$?
-
-            if [ "$main_status" -eq 0 ]; then
-              echo "$response" > test_run/upload_response.json
-              url=$(echo "$response" | jq -r '.image.url // empty')
-              if [ -n "$url" ]; then
-                echo "Залито на allwebs.ru: $url"
+              if [ "$main_status" -eq 0 ]; then
+                echo "$response" > "$response_out"
+                url=$(echo "$response" | jq -r '.image.url // empty')
+                if [ -n "$url" ]; then
+                  echo "Залито на allwebs.ru: $url" >&2
+                else
+                  echo "::warning::allwebs.ru ответил без .image.url ($file) — пробую резервный хостинг" >&2
+                fi
               else
-                echo "::warning::allwebs.ru ответил без .image.url — пробую резервный хостинг"
-                echo "$response"
+                echo "::warning::allwebs.ru недоступен для $file (curl код $main_status) — пробую резервный хостинг" >&2
               fi
             else
-              echo "::warning::allwebs.ru недоступен (curl код $main_status) — пробую резервный хостинг"
+              echo "::warning::CHEVERETO_API_KEY не задан — сразу пробую резервный хостинг" >&2
             fi
+
+            if [ -z "$url" ]; then
+              fallback=$(curl --fail-with-body -sS --connect-timeout 20 \
+                -F "reqtype=fileupload" \
+                -F "fileToUpload=@$file" \
+                https://catbox.moe/user/api.php) && fb_status=0 || fb_status=$?
+
+              if [ "$fb_status" -eq 0 ]; then
+                url=$(echo "$fallback" | tr -d '\r\n')
+                echo "Залито на резервный хостинг catbox.moe: $url" >&2
+                { echo "источник: catbox.moe (резерв)"; echo "$url"; } > "$response_out"
+              else
+                echo "::error::Резервный хостинг catbox.moe тоже недоступен для $file" >&2
+              fi
+            fi
+
+            echo "$url"
+          }
+
+          image_url=""
+          calendar_url=""
+
+          if [ -f test_run/battle_preview.png ]; then
+            image_url=$(upload_image test_run/battle_preview.png test_run/upload_response.json)
           else
-            echo "::warning::CHEVERETO_API_KEY не задан — сразу пробую резервный хостинг"
+            echo "Скриншота боя нет — пропускаю заливку."
           fi
 
-          # ── 2) Резерв: catbox.moe — без ключа, без прокси, обычно доступен ──
-          # напрямую с раннера. Хранение постоянное (в отличие от 0x0.st/файлопомоек
-          # с автоудалением), поэтому годится и для лога, а не только для теста.
-          if [ -z "$url" ]; then
-            fallback=$(curl --fail-with-body -sS --connect-timeout 20 \
-              -F "reqtype=fileupload" \
-              -F "fileToUpload=@test_run/battle_preview.png" \
-              https://catbox.moe/user/api.php) && fb_status=0 || fb_status=$?
-
-            if [ "$fb_status" -eq 0 ]; then
-              url=$(echo "$fallback" | tr -d '\r\n')
-              echo "Залито на резервный хостинг catbox.moe: $url"
-              echo "источник: catbox.moe (резерв)" > test_run/upload_response.json
-              echo "$url" >> test_run/upload_response.json
-            else
-              echo "::error::Резервный хостинг catbox.moe тоже недоступен"
-            fi
+          if [ -f test_run/calendar_preview.png ]; then
+            calendar_url=$(upload_image test_run/calendar_preview.png test_run/upload_response_calendar.json)
+          else
+            echo "Скриншота календаря нет — пропускаю заливку."
           fi
 
-          if [ -n "$url" ]; then
-            echo "image_url=$url" >> "$GITHUB_OUTPUT"
-            {
+          if [ -n "$image_url" ]; then
+            echo "image_url=$image_url" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Скриншот боя не залит ни на один хостинг — останется только в log/ репозитория как PNG"
+          fi
+
+          if [ -n "$calendar_url" ]; then
+            echo "calendar_image_url=$calendar_url" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Скриншот календаря не залит ни на один хостинг — останется только в log/ репозитория как PNG"
+          fi
+
+          {
+            if [ -n "$image_url" ]; then
               echo "### 📸 Скриншот боя"
-              echo "$url"
+              echo "$image_url"
               echo ""
-              echo "![preview]($url)"
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning::Скриншот не залит ни на один хостинг — останется только в log/ репозитория как PNG"
-          fi
+              echo "![preview]($image_url)"
+              echo ""
+            fi
+            if [ -n "$calendar_url" ]; then
+              echo "### 📅 Скриншот календаря"
+              echo "$calendar_url"
+              echo ""
+              echo "![calendar]($calendar_url)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Сохранить лог теста в репозитории (папка log/, не артефакт)
         if: always()
         env:
           IMAGE_URL: ${{ steps.upload.outputs.image_url }}
+          CALENDAR_IMAGE_URL: ${{ steps.upload.outputs.calendar_image_url }}
         run: |
           git config user.name  "test-bot"
           git config user.email "actions@github.com"
           ts="$(date -u +'%Y-%m-%d_%H-%M-%S')"
           dir="log/$ts"
           mkdir -p "$dir"
-          for f in test_run/actions.json test_run/state.json test_run/topic.html test_run/upload_response.json; do
+          for f in test_run/actions.json test_run/state.json test_run/topic.html test_run/upload_response.json test_run/upload_response_calendar.json; do
             [ -f "$f" ] && cp "$f" "$dir/"
           done
           if [ -n "$IMAGE_URL" ]; then
@@ -182,6 +213,11 @@ jobs:
           elif [ -f test_run/battle_preview.png ]; then
             # обе заливки не удались — кладём сам PNG, чтобы скрин не потерялся
             cp test_run/battle_preview.png "$dir/"
+          fi
+          if [ -n "$CALENDAR_IMAGE_URL" ]; then
+            echo "$CALENDAR_IMAGE_URL" > "$dir/calendar_screenshot_url.txt"
+          elif [ -f test_run/calendar_preview.png ]; then
+            cp test_run/calendar_preview.png "$dir/"
           fi
           git add "$dir"
           if git diff --cached --quiet; then
