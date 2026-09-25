@@ -92,6 +92,17 @@ async function shootPage(browser, url, out, { transparent = false, collectLog = 
         .avatar-name {
           padding-top: 6px !important; /* было 3px, +3px вниз */
         }
+
+        /* Только для скриншота battle2.html: убираем крупный заголовок
+           "БОЙ С БОССОМ" и декоративные линии по бокам от него — само
+           слово "тактический экран" остаётся, и над ним получается
+           небольшой прозрачный отступ вместо заголовка. Живую страницу
+           это не трогает: правило приходит только сюда, в скриншот-вкладку.
+           На calendar.html классов .header-deco/.header-sub нет — там
+           это правило ни на что не влияет. */
+        .header-deco { display: none !important; }
+        .header { padding-top: 4px !important; }
+        .header-sub { margin-top: 0 !important; }
       `,
     });
 
