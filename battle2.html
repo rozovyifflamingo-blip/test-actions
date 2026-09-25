@@ -1459,10 +1459,10 @@ function getParticipantUnder(x, y) {
 function applyKItem(item, participant, date) {
   if (item.isDamager) {
     setPlayerHP(participant.id, (participant.hp ?? 100) - 25);
-    addLogEntry(`💀 ${participant.name} получил 25 урона. HP: ${participant.hp}`, date);
+    addLogEntry(`${participant.name} ${g(participant.name, "получил", "получила")} 25 урона, HP ${participant.hp}`, date);
   } else {
     giveItemToParticipant(participant, item);
-    addLogEntry(`🎁 ${participant.name} получил: ${item.name}`, date);
+    addLogEntry(`${participant.name} ${g(participant.name, "получил", "получила")} ${item.name}`, date);
   }
 }
 
@@ -1572,7 +1572,7 @@ function dequeueBoss(uid) {
 function spawnNext() {
   if (spawnTimer) { clearTimeout(spawnTimer); spawnTimer = null; }
   if (encounterQueue.length === 0) { addLogEntry("⚠ Очередь пуста — добавьте боссов"); return false; }
-  if (encounterIdx >= encounterQueue.length) { addLogEntry("✓ Все бои завершены!"); return false; }
+  if (encounterIdx >= encounterQueue.length) { addLogEntry("Все бои завершены"); return false; }
   spawnEncounterEntry(encounterQueue[encounterIdx++]);
   return true;
 }
@@ -1631,7 +1631,7 @@ function spawnEncounterEntry(entry) {
     // Reset per-boss damage
     participants.forEach(p => p.damageCurrent = 0);
 
-    addLogEntry(`👾 МОБ: ${mobDef.name} | HP: ${hp} | Лут: ${loot ? loot.name : "—"}`);
+    addLogEntry(`Появился ${mobDef.name}, HP ${hp}, лут ${loot ? loot.name : "нет"}`);
   } else {
     // Boss
     const loot1 = LOOT_ITEMS.find(i => i.id === entry.loot[0]);
@@ -1694,7 +1694,7 @@ function spawnEncounterEntry(entry) {
     }
 
     participants.forEach(p => p.damageCurrent = 0);
-    addLogEntry(`☠ БОСС: ${entry.name} | HP: ${MAX_HP} | Лут: ${loot1 ? loot1.name : "—"}${loot2 ? " + " + loot2.name : ""}`);
+    addLogEntry(`Появился ${entry.name}, HP ${MAX_HP}, лут ${loot1 ? loot1.name : "нет"}${loot2 ? ", " + loot2.name : ""}`);
   }
 
   updateQueuePreview();
@@ -2425,6 +2425,22 @@ function nowHM() {
   return String(d.getHours()).padStart(2, "0") + ":" +
          String(d.getMinutes()).padStart(2, "0");
 }
+// Грубое угадывание рода имени для согласования глаголов в журнале боя
+// (присоединился/присоединилась и т.п.). Правило: имя оканчивается на
+// "а"/"я" — женский род, кроме короткого списка мужских имён-исключений.
+// Это эвристика, а не точное определение: для нетипичных форумных ников
+// может ошибаться.
+const MALE_NAME_EXCEPTIONS = new Set([
+  "никита", "илья", "данила", "фока", "фома", "фёдора", // Фёдора как редк. муж. форма
+]);
+function isFemaleName(name) {
+  const n = String(name || "").trim().toLowerCase();
+  const last = n.slice(-1);
+  return (last === "а" || last === "я") && !MALE_NAME_EXCEPTIONS.has(n);
+}
+function g(name, male, female) {
+  return isFemaleName(name) ? female : male;
+}
 function fmtDay(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
   return m ? `${m[3]}.${m[2]}.${m[1]}` : (iso || "без даты");
@@ -2506,7 +2522,7 @@ function bossDrain() {
   currentHP = Math.min(MAX_HP, currentHP + got);
   updateHP();
   const bossName = document.getElementById("boss-name-el")?.textContent || "Босс";
-  addLogEntry(`🧛 ${bossName} высасывает ${got} HP у ${victim.name}`);
+  addLogEntry(`${bossName} отнял ${got} HP у ${victim.name}`);
 }
 
 // Наградной лут встаёт первым в инвентаре, сдвигая остальное
@@ -2554,7 +2570,12 @@ function giveRewardLoot(rewardIds) {
       targets = participants.filter(p => (p.hp ?? 100) > 0);
     }
     targets.forEach(p => giveItemToFront(p, { name: it.name, src: it.src, id: it.id }));
-    if (targets.length) addLogEntry(`🏆 ${it.name} → ${targets.map(p => p.name).join(", ")}`);
+    // Тот же вид строки, что и у обычного лута с побеждённого: имя врага +
+    // отдельная строка на каждого получателя.
+    const enemyName = document.getElementById("boss-name-el")?.textContent || "Противник";
+    targets.forEach(p => {
+      addLogEntry(`${enemyName} повержен, лут ${g(p.name, "получил", "получила")} ${p.name}`);
+    });
   });
 }
 
@@ -2571,7 +2592,7 @@ function healParticipantsEvenly(total) {
 }
 
 // ── ATTACK ──
-function handleParticipantAttack(participant, avatarEl) {
+function handleParticipantAttack(participant, avatarEl, date, viaAdmin) {
   if (!battleStarted) {
     battleStarted = true;
     if (!spawnNext()) { battleStarted = false; return; } // очередь пуста — не добавлены боссы
@@ -2579,7 +2600,7 @@ function handleParticipantAttack(participant, avatarEl) {
   if (currentHP <= 0) return;
   // Blocked if HP = 0
   if ((participant.hp ?? 100) <= 0) {
-    addLogEntry(`${participant.name} повержен и не может атаковать!`);
+    addLogEntry(`${participant.name} ${g(participant.name, "повержен", "повержена")}, не может атаковать`, date);
     return;
   }
 
@@ -2608,7 +2629,7 @@ function handleParticipantAttack(participant, avatarEl) {
     const it = LOOT_ITEMS.find(x => x.id === pool[Math.floor(Math.random() * pool.length)]);
     if (it) {
       giveItemToParticipant(participant, { name: it.name, src: it.src, id: it.id });
-      addLogEntry(`🦴 Кость ${participant.name} превратилась в: ${it.name}`);
+      addLogEntry(`Кость ${participant.name} превратилась в ${it.name}`);
     }
   }
 
@@ -2617,7 +2638,7 @@ function handleParticipantAttack(participant, avatarEl) {
     consumeOneItem(participant, "lingonberry");
     participant.maxHp = maxHpOf(participant) + 20;
     setPlayerHP(participant.id, (participant.hp ?? 100) + 20);
-    addLogEntry(`🫐 ${participant.name}: макс. HP +20 (теперь ${participant.maxHp})`);
+    addLogEntry(`${participant.name} ${g(participant.name, "получил", "получила")} +20 макс. HP (теперь ${participant.maxHp})`);
   }
 
   let d1 = Math.floor(Math.random() * 8) + 1;
@@ -2748,18 +2769,24 @@ function handleParticipantAttack(participant, avatarEl) {
       setPlayerHP(participant.id, (participant.hp ?? 100) + regen);
     }
 
-    // Log
+    // Log — минимально: итоговый урон + короткие пометки бонусов, без чисел броска
     let logParts = [];
-    if (doubloonCount > 0 && d1 === d2) logParts.push(`🪙 ДУБЛЬ! +${doubloonBonus} (×${doubloonCount} дублон)`);
-    if (doubleSword) logParts.push(`⚔ МЕЧ +${d3}`);
-    if (pitchforkDmg) logParts.push(`🌾 ВИЛЫ +${pitchforkDmg} (ход ${participant.turnCount})`);
-    if (bombDmg) logParts.push(`💣 БОМБА +${bombDmg}`);
-    if (heartDmg) logParts.push(`🫀 СЕРДЦЕ +${heartDmg} (−${heartCost} HP)`);
-    if (keyDmg) logParts.push(`🗝 КЛЮЧ +${keyDmg}`);
-    if (skullOn) logParts.push(`💀 ЧЕРЕП ×2`);
-    if (fangDmg) logParts.push(`🦷 КЛЫКИ +${fangDmg}, лечение отряда`);
-    const suffix = logParts.length ? ` [${logParts.join(" | ")}]` : "";
-    addLogEntry(`${participant.name} бросил 2d8: ${d1}+${d2} = <span class="dmg">${finalDmg} ур</span>${suffix}`);
+    if (doubloonCount > 0 && d1 === d2) logParts.push(`дубль +${doubloonBonus}`);
+    if (doubleSword) logParts.push(`меч +${d3}`);
+    if (pitchforkDmg) logParts.push(`вилы +${pitchforkDmg}`);
+    if (bombDmg) logParts.push(`бомба +${bombDmg}`);
+    if (heartDmg) logParts.push(`сердце +${heartDmg}`);
+    if (keyDmg) logParts.push(`ключ +${keyDmg}`);
+    if (skullOn) logParts.push(`череп ×2`);
+    if (fangDmg) logParts.push(`клыки +${fangDmg}, лечение отряда`);
+    const bonusSuffix = logParts.length ? `, ${logParts.join(", ")}` : "";
+    const viaSuffix = viaAdmin ? `, записал ${viaAdmin}` : "";
+    addLogEntry(
+      // renderLog сам подсвечивает "N ур..." красным (см. .replace на "ур" в renderLog) —
+      // отдельный <span class="dmg"> здесь не нужен, иначе получится двойная обёртка.
+      `${participant.name} ${g(participant.name, "атаковал", "атаковала")} ${finalDmg} урона${bonusSuffix}${viaSuffix}`,
+      date
+    );
     if ((currentEnemyRetaliates || currentEnemyDrains) && currentHP > 0) {
       // «ход» = совокупное число ударов по текущему врагу; никого не ждём —
       // если один игрок бьёт чаще, отработка способностей идёт по факту ударов.
@@ -2781,6 +2808,8 @@ function handleParticipantAttack(participant, avatarEl) {
         const it = LOOT_ITEMS.find(i => i.id === id); return it && it.reward;
       });
       if (rewardIds.length) giveRewardLoot(rewardIds);
+      // Имя противника берём с экрана — оно уже установлено на спавне (моб или босс)
+      const enemyName = document.getElementById("boss-name-el")?.textContent || "Противник";
       const eligible = participants.filter(p => (p.damageCurrent || 0) >= 1);
       if (eligible.length > 0) {
         currentLootIds.filter(Boolean).forEach(id => {
@@ -2788,10 +2817,10 @@ function handleParticipantAttack(participant, avatarEl) {
           if (!it || it.reward) return;
           const winner = eligible[Math.floor(Math.random() * eligible.length)]; // отдельный розыгрыш на каждый предмет
           giveItemToParticipant(winner, { name: it.name, src: it.src, id: it.id });
-          addLogEntry(`☠ Повержен! 🗡 ${it.name} → ${winner.name}!`);
+          addLogEntry(`${enemyName} повержен, лут ${g(winner.name, "получил", "получила")} ${winner.name}`);
         });
       } else if (!rewardIds.length) {
-        addLogEntry("☠ Повержен! Некому наградить...");
+        addLogEntry(`${enemyName} повержен, лут не достался никому`);
       }
       scheduleNextSpawn();
     }
@@ -3064,9 +3093,7 @@ function forumAttack(name, date, viaAdmin) {
   const p = findOrCreateParticipant(name);
   if (!p) return;
   const av = document.querySelector(`tr[data-participant-id="${p.id}"] .avatar`);
-  if (av) handleParticipantAttack(p, av);
-  const via = viaAdmin ? ` (записал админ ${viaAdmin})` : "";
-  addLogEntry(`<span class="src-forum">⚔ форум</span> ${p.name} — «+атака»${via}`, date);
+  if (av) handleParticipantAttack(p, av, date, viaAdmin);
 }
 
 function forumSryv(name, date, viaAdmin) {
@@ -3075,9 +3102,9 @@ function forumSryv(name, date, viaAdmin) {
   p.sryv = (p.sryv || 0) + 1;
   // тот же предмет «Урон −25 HP», что и на панели предметов (K)
   applyKItem({ id: "__damager__", name: "Урон\n−25 HP", isDamager: true }, p, date);
-  const via = viaAdmin ? ` (записал админ ${viaAdmin})` : "";
+  const via = viaAdmin ? `, записал ${viaAdmin}` : "";
   addLogEntry(
-    `<span class="src-forum">✖ форум</span> ${p.name} — «!срыв» №${p.sryv}, −25 HP${via}`,
+    `${p.name} ${g(p.name, "сорвался", "сорвалась")} №${p.sryv}, −25 HP${via}`,
     date
   );
 }
@@ -3087,7 +3114,7 @@ function forumJoin(name, date) {
   const p = findOrCreateParticipant(name);
   if (!p) return;
   if (!existed) {
-    addLogEntry(`<span class="src-forum">➕ форум</span> ${p.name} присоединился к бою`, date);
+    addLogEntry(`${p.name} ${g(p.name, "присоединился", "присоединилась")} к бою`, date);
   }
 }
 
@@ -3122,7 +3149,7 @@ function forumExile(name, date) {
     ? `лут (${distributed} шт.) роздан живым`
     : "лута не было";
   addLogEntry(
-    `<span class="src-forum">🏴 форум</span> ${exiled.name} изгнан за неактивность (7+ дней) — ${lootMsg}`,
+    `${exiled.name} ${g(exiled.name, "изгнан", "изгнана")} за неактивность (7+ дней), ${lootMsg}`,
     date
   );
 }
@@ -3146,7 +3173,8 @@ function ingestFeed(data) {
       else if (ev.command === "sryv")   forumSryv(who, date, viaAdmin);
       else if (ev.command === "join")   forumJoin(who, date);
       else if (ev.command === "exile")  forumExile(who, date);
-      else addLogEntry(`<span class="src-forum">форум</span> ${who}: ${ev.command}`, date);
+      else if (ev.command === "start")  addLogEntry("Бой начался", date);
+      else addLogEntry(`${who} ${ev.command}`, date);
     });
   return applied;
 }
