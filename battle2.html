@@ -46,6 +46,7 @@ img, .avatar, .dice, canvas {
   --hp-low:        #9a3a28;
   --hp-crit:       #c25040;
   --inset:         #1a1a24;
+  --admin-mark:    #5ac25a; /* зелёная пометка "записал админ" в журнале боя */
 }
 
 body {
@@ -875,6 +876,7 @@ body {
 .log-entry:first-child { color: var(--text); }
 .log-entry:last-child  { border-bottom: none; }
 .log-entry .dmg { color: var(--damage); font-family: 'Press Start 2P', monospace; font-size: 10px; }
+.log-entry .admin-mark { color: var(--admin-mark); font-family: 'Press Start 2P', monospace; font-size: 10px; }
 .log-bullet { color: var(--border-accent); flex-shrink: 0; font-size: 10px; }
 .log-day-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -2780,7 +2782,7 @@ function handleParticipantAttack(participant, avatarEl, date, viaAdmin) {
     if (skullOn) logParts.push(`череп ×2`);
     if (fangDmg) logParts.push(`клыки +${fangDmg}, лечение отряда`);
     const bonusSuffix = logParts.length ? `, ${logParts.join(", ")}` : "";
-    const viaSuffix = viaAdmin ? `, записал ${viaAdmin}` : "";
+    const viaSuffix = viaAdmin ? ` (<span class="admin-mark">${viaAdmin.trim().charAt(0).toUpperCase()}</span>)` : "";
     addLogEntry(
       // renderLog сам подсвечивает "N ур..." красным (см. .replace на "ур" в renderLog) —
       // отдельный <span class="dmg"> здесь не нужен, иначе получится двойная обёртка.
@@ -3102,7 +3104,7 @@ function forumSryv(name, date, viaAdmin) {
   p.sryv = (p.sryv || 0) + 1;
   // тот же предмет «Урон −25 HP», что и на панели предметов (K)
   applyKItem({ id: "__damager__", name: "Урон\n−25 HP", isDamager: true }, p, date);
-  const via = viaAdmin ? `, записал ${viaAdmin}` : "";
+  const via = viaAdmin ? ` (<span class="admin-mark">${viaAdmin.trim().charAt(0).toUpperCase()}</span>)` : "";
   addLogEntry(
     `${p.name} ${g(p.name, "сорвался", "сорвалась")} №${p.sryv}, −25 HP${via}`,
     date
