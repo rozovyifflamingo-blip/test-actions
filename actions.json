@@ -1,4 +1,19 @@
 {
-  "topic_id": "85035",
-  "events": []
+  "topic_id": "85048",
+  "events": [
+    {
+      "id": "2718879:start:1656",
+      "post_id": "2718879",
+      "pos": 1656,
+      "author": "Илон",
+      "target": "Илон",
+      "command": "start",
+      "date": "2026-09-26",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "пиши !присоединяюсь !Старт будет после набора",
+      "post_time": "2026-09-25T10:16:29+00:00"
+    }
+  ],
+  "updated": "2026-09-26T09:58:04+03:00"
 }
