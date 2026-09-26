@@ -7,7 +7,7 @@ on:
       topic_id:
         description: "ID темы (showtopic=...)"
         required: false
-        default: ""   # ID темы стёрт — впишите новый перед запуском
+        default: "85048"
 
 permissions:
   contents: write               # нужно, чтобы бот коммитил файлы обратно
@@ -33,7 +33,7 @@ jobs:
 
       - name: Проверка темы форума
         env:
-          TOPIC_ID: ${{ github.event.inputs.topic_id }}   # ID темы стёрт — впишите новый перед запуском
+          TOPIC_ID: ${{ github.event.inputs.topic_id || '85048' }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: python scrape_topic.py
 

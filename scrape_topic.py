@@ -110,6 +110,28 @@ OTHER_COMMAND = {"attack": "sryv", "sryv": "attack"}
 # дата: 21/09, 21.09, 21-09, 21/09/25, 21.09.2025
 DATE_RE = re.compile(r"(\d{1,2})[./\-](\d{1,2})(?:[./\-](\d{2,4}))?")
 
+# пары кавычек, внутри которых команды не считаются: обычные, ёлочки,
+# "типографские" открывающая/закрывающая. Ищем построчно (без \n внутри
+# пары) — так одна забытая кавычка не "съест" остаток всего поста.
+QUOTE_PAIRS = [
+    re.compile(r'"[^"\n]*"'),
+    re.compile(r"«[^»\n]*»"),
+    re.compile(r"“[^”\n]*”"),
+]
+
+
+def quoted_spans(text):
+    """Список (start, end) диапазонов текста внутри полных пар кавычек."""
+    spans = []
+    for rx in QUOTE_PAIRS:
+        for m in rx.finditer(text):
+            spans.append((m.start(), m.end()))
+    return spans
+
+
+def in_any_span(pos, spans):
+    return any(s <= pos < e for s, e in spans)
+
 DATE_LOOKAHEAD = 30   # символов справа от команды, где ищем дату
 NAME_LOOKBEHIND = 40  # символов слева от команды, где ищем ник (для админа)
 NAME_GAP_MAX = 12     # ник должен заканчиваться не дальше этого от команды
@@ -297,9 +319,11 @@ def extract_events(post, today, admin_name, known_names, used_dates, join_dates,
     is_admin = bool(admin_name) and author.strip().lower() == admin_name.strip().lower()
     today_str = today.strftime("%Y-%m-%d")
 
+    quoted = quoted_spans(text)
     hits_all = sorted(
         (m.start(), m.end(), command)
         for command, rx in COMMANDS for m in rx.finditer(text)
+        if not in_any_span(m.start(), quoted)   # команда внутри "кавычек" — не считаем
     )
 
     for idx, (start, end, command) in enumerate(hits_all):
