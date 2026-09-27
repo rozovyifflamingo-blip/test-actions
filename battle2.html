@@ -3112,12 +3112,10 @@ function forumSryv(name, date, viaAdmin) {
 }
 
 function forumJoin(name, date) {
-  const existed = participants.some(x => x.name.toLowerCase() === String(name || "").trim().toLowerCase());
-  const p = findOrCreateParticipant(name);
-  if (!p) return;
-  if (!existed) {
-    addLogEntry(`${p.name} ${g(p.name, "присоединился", "присоединилась")} к бою`, date);
-  }
+  // Само появление участника уже логируется в addParticipant() строкой
+  // "X вступил в бой" — здесь отдельную вторую строку больше не добавляем,
+  // чтобы одно и то же событие не дублировалось в журнале.
+  findOrCreateParticipant(name);
 }
 
 // Изгнание за неактивность 7+ дней (событие "exile" от scrape_topic.py).
