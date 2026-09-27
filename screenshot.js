@@ -16,7 +16,7 @@ const { chromium } = require("playwright-core");
 
 const VIEWPORT = { width: 1536, height: 735 };   // = viewport реального браузера (1920px при масштабе 125%)
 const DEVICE_SCALE_FACTOR = 2;   // резкость для pixel-art шрифтов (бой/календарь)
-const LOG_DEVICE_SCALE_FACTOR = 1; // журнал рендерим 1:1 — размер должен совпадать с обычным текстом форума, не с ретиной
+const LOG_DEVICE_SCALE_FACTOR = DEVICE_SCALE_FACTOR; // рендерим крупно и чётко, уменьшаем уже готовый файл (см. LOG_OUTPUT_SCALE)
 const READY_TIMEOUT_MS = 20000;
 
 // Основной таргет (battle2.html) — как раньше, через SCREENSHOT_URL/OUT.
@@ -43,8 +43,12 @@ const TARGET_LOG_OUT =
 const SKIP_LOG = process.env.SCREENSHOT_SKIP_LOG === "1";
 
 const LOG_FONT_FILE = path.join(__dirname, "CGCHR-Regular.otf");
-const LOG_FONT_SIZE = 13;          // px, при LOG_DEVICE_SCALE_FACTOR=1 — итоговый размер на PNG.
-                                    // Подобрано по скриншоту форума: совпадает с обычным текстом поста.
+const LOG_FONT_SIZE = 16;          // px (при LOG_DEVICE_SCALE_FACTOR=2 на PNG это 32px) —
+                                    // рендерим крупно ради чёткости, финальный размер
+                                    // задаёт LOG_OUTPUT_SCALE ниже.
+const LOG_OUTPUT_SCALE = 0.4;      // во сколько раз уменьшить готовый PNG перед сохранением.
+                                    // Подобрано по скриншоту форума, чтобы итоговый текст
+                                    // совпадал по размеру с обычным текстом поста.
 const LOG_LINE_HEIGHT = 1.5;
 const LOG_LINE_GAP = 4;           // px — дополнительный отступ между строками
 const LOG_TOP_PAD = 3;            // px — прозрачный отступ над первой строкой
@@ -162,6 +166,32 @@ function cleanLogLine(t) {
 const withDamageHighlight = t =>
   escapeHtml(t).replace(/(\d+\s*ур[а-яё]*)/gi, '<span class="dmg">$1</span>');
 
+// Уменьшает готовый PNG (Buffer) в scale раз с качественным сглаживанием
+// и сохраняет в out. Делает это через <canvas> в уже открытой странице —
+// без сторонних библиотек: даём картинке отрисоваться как <img>, рисуем
+// её на canvas нужного размера с imageSmoothingQuality="high", вынимаем
+// результат обратно как PNG.
+async function downscalePng(page, buffer, out, scale) {
+  const dataUrl = "data:image/png;base64," + buffer.toString("base64");
+  const resizedB64 = await page.evaluate(async ({ dataUrl, scale }) => {
+    const img = new Image();
+    img.src = dataUrl;
+    await img.decode();
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/png").split(",")[1];
+  }, { dataUrl, scale });
+  fs.writeFileSync(out, Buffer.from(resizedB64, "base64"));
+}
+
 async function shootLog(browser, log, out) {
   let lines = (log.lines || []).slice();
   if (!LOG_NEWEST_FIRST) lines.reverse();
@@ -227,8 +257,13 @@ async function shootLog(browser, log, out) {
       );
       log.style.paddingTop = (top + overflow) + "px";
     }, LOG_TOP_PAD);
-    await page.locator("#log").screenshot({ path: out, omitBackground: true });
-    console.log(`Журнал боя сохранён: ${out} (${lines.length} строк)`);
+    // Снимаем в буфer (не сразу в файл), чтобы следующим шагом уменьшить
+    // готовую чёткую картинку до финального размера — качество после
+    // уменьшения большого чёткого изображения выше, чем при рендере сразу
+    // в маленьком размере.
+    const bigBuffer = await page.locator("#log").screenshot({ omitBackground: true });
+    await downscalePng(page, bigBuffer, out, LOG_OUTPUT_SCALE);
+    console.log(`Журнал боя сохранён: ${out} (${lines.length} строк, уменьшено ×${LOG_OUTPUT_SCALE})`);
   } finally {
     await page.close();
   }
