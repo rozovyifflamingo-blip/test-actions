@@ -13,7 +13,33 @@
       "is_admin_action": false,
       "context": "пиши !присоединяюсь !Старт будет после набора",
       "post_time": "2026-09-25T10:16:29+00:00"
+    },
+    {
+      "id": "2719057:join:19",
+      "post_id": "2719057",
+      "pos": 19,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "join",
+      "date": "2026-09-27",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "Запиши пожалуйста! !присоединяюсь Сообщение отредакти",
+      "post_time": "2026-09-26T15:28:21+00:00"
+    },
+    {
+      "id": "2719058:join:0",
+      "post_id": "2719058",
+      "pos": 0,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "join",
+      "date": "2026-09-27",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!Присоединяюсь Сообщение отредакти",
+      "post_time": "2026-09-26T15:31:28+00:00"
     }
   ],
-  "updated": "2026-09-26T09:58:04+03:00"
+  "updated": "2026-09-27T04:11:57+03:00"
 }
