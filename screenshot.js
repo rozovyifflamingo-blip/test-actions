@@ -15,7 +15,8 @@ const path = require("path");
 const { chromium } = require("playwright-core");
 
 const VIEWPORT = { width: 1536, height: 735 };   // = viewport реального браузера (1920px при масштабе 125%)
-const DEVICE_SCALE_FACTOR = 2;   // резкость для pixel-art шрифтов
+const DEVICE_SCALE_FACTOR = 2;   // резкость для pixel-art шрифтов (бой/календарь)
+const LOG_DEVICE_SCALE_FACTOR = 1; // журнал рендерим 1:1 — размер должен совпадать с обычным текстом форума, не с ретиной
 const READY_TIMEOUT_MS = 20000;
 
 // Основной таргет (battle2.html) — как раньше, через SCREENSHOT_URL/OUT.
@@ -42,7 +43,8 @@ const TARGET_LOG_OUT =
 const SKIP_LOG = process.env.SCREENSHOT_SKIP_LOG === "1";
 
 const LOG_FONT_FILE = path.join(__dirname, "CGCHR-Regular.otf");
-const LOG_FONT_SIZE = 16;          // px (при DEVICE_SCALE_FACTOR=2 на PNG это 32px)
+const LOG_FONT_SIZE = 13;          // px, при LOG_DEVICE_SCALE_FACTOR=1 — итоговый размер на PNG.
+                                    // Подобрано по скриншоту форума: совпадает с обычным текстом поста.
 const LOG_LINE_HEIGHT = 1.5;
 const LOG_LINE_GAP = 4;           // px — дополнительный отступ между строками
 const LOG_TOP_PAD = 3;            // px — прозрачный отступ над первой строкой
@@ -202,7 +204,7 @@ async function shootLog(browser, log, out) {
 
   const page = await browser.newPage({
     viewport: VIEWPORT,
-    deviceScaleFactor: DEVICE_SCALE_FACTOR,
+    deviceScaleFactor: LOG_DEVICE_SCALE_FACTOR,
   });
   try {
     await page.setContent(html, { waitUntil: "load" });
