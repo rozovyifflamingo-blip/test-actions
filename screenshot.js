@@ -16,7 +16,8 @@ const { chromium } = require("playwright-core");
 
 const VIEWPORT = { width: 1536, height: 735 };   // = viewport реального браузера (1920px при масштабе 125%)
 const DEVICE_SCALE_FACTOR = 2;   // резкость для pixel-art шрифтов (бой/календарь)
-const LOG_DEVICE_SCALE_FACTOR = DEVICE_SCALE_FACTOR; // рендерим крупно и чётко, уменьшаем уже готовый файл (см. LOG_OUTPUT_SCALE)
+const LOG_DEVICE_SCALE_FACTOR = 1; // журнал: строго 1:1 — 1 CSS-px = 1 физический px PNG,
+                                    // никакого дробного масштабирования (иначе шрифт мылится)
 const READY_TIMEOUT_MS = 20000;
 
 // Основной таргет (battle2.html) — как раньше, через SCREENSHOT_URL/OUT.
@@ -43,12 +44,15 @@ const TARGET_LOG_OUT =
 const SKIP_LOG = process.env.SCREENSHOT_SKIP_LOG === "1";
 
 const LOG_FONT_FILE = path.join(__dirname, "CGCHR-Regular.otf");
-const LOG_FONT_SIZE = 16;          // px (при LOG_DEVICE_SCALE_FACTOR=2 на PNG это 32px) —
-                                    // рендерим крупно ради чёткости, финальный размер
-                                    // задаёт LOG_OUTPUT_SCALE ниже.
-const LOG_OUTPUT_SCALE = 0.4;      // во сколько раз уменьшить готовый PNG перед сохранением.
-                                    // Подобрано по скриншоту форума, чтобы итоговый текст
-                                    // совпадал по размеру с обычным текстом поста.
+// Нативный кегль CGCHR: unitsPerEm=640, узлы контуров лежат на сетке
+// шагом 128 unit (640/128=5) → 1 "пиксель" шрифта = font-size/5 физических px.
+// При LOG_DEVICE_SCALE_FACTOR=1 это целое число только при font-size, кратном 5.
+// 10px даёт капхайт 896/640*10=14px и ширину символа 1024/640*10=16px ровно —
+// это и есть родной шаг сетки шрифта (в 2 физических px на "пиксель" глифа),
+// при котором нет сдвоенных/пропадающих линий. Итоговый размер получается
+// компактным, сопоставимым с обычным текстом постов форума — без отдельного
+// уменьшения канвасом (см. историю: раньше был LOG_OUTPUT_SCALE, теперь не нужен).
+const LOG_FONT_SIZE = 10;
 const LOG_LINE_HEIGHT = 1.5;
 const LOG_LINE_GAP = 4;           // px — дополнительный отступ между строками
 const LOG_TOP_PAD = 3;            // px — прозрачный отступ над первой строкой
@@ -166,32 +170,6 @@ function cleanLogLine(t) {
 const withDamageHighlight = t =>
   escapeHtml(t).replace(/(\d+\s*ур[а-яё]*)/gi, '<span class="dmg">$1</span>');
 
-// Уменьшает готовый PNG (Buffer) в scale раз с качественным сглаживанием
-// и сохраняет в out. Делает это через <canvas> в уже открытой странице —
-// без сторонних библиотек: даём картинке отрисоваться как <img>, рисуем
-// её на canvas нужного размера с imageSmoothingQuality="high", вынимаем
-// результат обратно как PNG.
-async function downscalePng(page, buffer, out, scale) {
-  const dataUrl = "data:image/png;base64," + buffer.toString("base64");
-  const resizedB64 = await page.evaluate(async ({ dataUrl, scale }) => {
-    const img = new Image();
-    img.src = dataUrl;
-    await img.decode();
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL("image/png").split(",")[1];
-  }, { dataUrl, scale });
-  fs.writeFileSync(out, Buffer.from(resizedB64, "base64"));
-}
-
 async function shootLog(browser, log, out) {
   let lines = (log.lines || []).slice();
   if (!LOG_NEWEST_FIRST) lines.reverse();
@@ -224,8 +202,18 @@ async function shootLog(browser, log, out) {
       font-size: ${LOG_FONT_SIZE}px;
       line-height: ${LOG_LINE_HEIGHT};
       color: ${LOG_COLOR_TEXT};
+      -webkit-font-smoothing: none;
+      font-smooth: never;
+      text-rendering: geometricPrecision;
+      image-rendering: pixelated;
     }
-    .line { overflow-wrap: anywhere; }
+    .line {
+      overflow-wrap: anywhere;
+      -webkit-font-smoothing: none;
+      font-smooth: never;
+      text-rendering: geometricPrecision;
+      image-rendering: pixelated;
+    }
     .line + .line { margin-top: ${LOG_LINE_GAP}px; }
     .dmg  { color: ${LOG_COLOR_DAMAGE}; }
   </style></head><body><div id="log">${
@@ -257,13 +245,12 @@ async function shootLog(browser, log, out) {
       );
       log.style.paddingTop = (top + overflow) + "px";
     }, LOG_TOP_PAD);
-    // Снимаем в буфer (не сразу в файл), чтобы следующим шагом уменьшить
-    // готовую чёткую картинку до финального размера — качество после
-    // уменьшения большого чёткого изображения выше, чем при рендере сразу
-    // в маленьком размере.
-    const bigBuffer = await page.locator("#log").screenshot({ omitBackground: true });
-    await downscalePng(page, bigBuffer, out, LOG_OUTPUT_SCALE);
-    console.log(`Журнал боя сохранён: ${out} (${lines.length} строк, уменьшено ×${LOG_OUTPUT_SCALE})`);
+    // Прямое сохранение 1:1: deviceScaleFactor=1 + font-size, кратный
+    // родной сетке шрифта (см. LOG_FONT_SIZE) гарантируют, что каждый
+    // "пиксель" глифа CGCHR ложится ровно на один физический пиксель PNG,
+    // без промежуточного канвас-масштабирования и связанного с ним мыла.
+    await page.locator("#log").screenshot({ path: out, omitBackground: true });
+    console.log(`Журнал боя сохранён: ${out} (${lines.length} строк, 1:1, шрифт ${LOG_FONT_SIZE}px)`);
   } finally {
     await page.close();
   }
