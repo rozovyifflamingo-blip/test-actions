@@ -89,13 +89,21 @@ jobs:
           [ -n "$h" ] && echo "::add-mask::$h"
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
           for u in "https://antio.ru/" \
-                   "https://antio.ru/index.php?showtopic=85048&st=0" \
-                   "https://antio.ru/index.php?showtopic=84973&page=7"; do
-            out=$(curl -sS -o /dev/null --max-time 25 -x "$p" -A "$UA" \
-                  -H "Accept-Language: ru,en;q=0.8" \
-                  -w "HTTP %{http_code}, %{time_total}s" "$u" 2>&1 \
-                  | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g') || true
-            echo "curl -> $u : $out"
+                   "https://antio.ru/index.php?showtopic=85048&st=0"; do
+            echo "=== $u"
+            curl -sS -i -o "$RUNNER_TEMP/resp.txt" --max-time 15 -x "$p" -A "$UA" \
+                 -H "Accept-Language: ru,en;q=0.8" "$u" 2>&1 \
+                 | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g' || true
+            echo "--- получено байт: $(wc -c < "$RUNNER_TEMP/resp.txt")"
+            echo "--- заголовки (без cookie):"
+            sed -n '1,/^\r\?$/p' "$RUNNER_TEMP/resp.txt" | grep -vi '^set-cookie' | head -25
+            echo "--- <title>: $(grep -a -o -i '<title>[^<]*' "$RUNNER_TEMP/resp.txt" | head -1)"
+            echo "--- начало тела:"
+            sed '1,/^\r\?$/d' "$RUNNER_TEMP/resp.txt" | tr -d '\r' | sed -E 's/<[^>]+>/ /g' | tr -s ' \n' | head -c 500
+            echo
+            echo "--- конец тела:"
+            tail -c 300 "$RUNNER_TEMP/resp.txt" | tr -d '\r'
+            echo
           done
 
       - name: Проверка темы форума
