@@ -1,0 +1,133 @@
+name: Тест РУ-прокси (ручной)
+
+# Отдельный workflow для быстрой проверки прокси из секрета PROXY_URL тем же
+# способом, что и ScrapingAnt-тест: грузим страницу форума несколькими
+# способами, проверяем целостность (</body></html>) и прогоняем через parse_page.
+# Ничего не коммитит, основной workflow не трогает.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Какую страницу форума загрузить"
+        required: false
+        default: "https://antio.ru/index.php?showtopic=85048&st=0"
+      repeats:
+        description: "Сколько раз повторить каждый способ (обрывы бывают нерегулярными)"
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  proxy-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python и зависимостей
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests beautifulsoup4
+
+      - name: curl через прокси (h2 / HTTP1.1 / HTTP1.1+gzip)
+        env:
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          IN_URL: ${{ github.event.inputs.url }}
+          IN_REPEATS: ${{ github.event.inputs.repeats }}
+        run: |
+          if [ -z "$PROXY_URL" ]; then
+            echo "::error::Не задан секрет PROXY_URL"
+            exit 1
+          fi
+          p="$PROXY_URL"
+          case "$p" in http://*|https://*|socks*://*) ;; *) p="http://$p" ;; esac
+          h="${p#*@}"; h="${h%%:*}"; h="${h#*://}"
+          [ -n "$h" ] && echo "::add-mask::$h"
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+          echo "Выходной IP прокси: $(curl -sS --max-time 20 -x "$p" https://api.ipify.org 2>&1 | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g')"
+
+          # one <метка> <файл> <доп. аргументы curl>
+          one() {
+            local label="$1" f="$2"; shift 2
+            local res
+            res=$(curl -sS -o "$f" --max-time 40 -x "$p" -A "$UA" \
+                  -H "Accept-Language: ru,en;q=0.8" \
+                  -w "HTTP %{http_code} | %{size_download} Б | %{time_total} с" \
+                  "$@" "$IN_URL" 2>&1 | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g' | tr '\n' ' ') || true
+            local body_ok="нет"
+            grep -a -qi '</body>' "$f" 2>/dev/null && grep -a -qi '</html>' "$f" && body_ok="да"
+            echo "  $label: $res | целая страница: $body_ok | post_block: $(grep -a -o 'post_block' "$f" 2>/dev/null | wc -l)"
+          }
+
+          for i in $(seq 1 "$IN_REPEATS"); do
+            echo "--- повтор $i"
+            one "curl h2        " "px_curl_h2_$i.html"
+            one "curl HTTP/1.1  " "px_curl_h11_$i.html"      --http1.1
+            one "curl h1.1+gzip " "px_curl_h11gz_$i.html"    --http1.1 --compressed
+          done
+
+      - name: python requests через прокси (как в скрапере) + разбор parse_page
+        env:
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          IN_URL: ${{ github.event.inputs.url }}
+          IN_REPEATS: ${{ github.event.inputs.repeats }}
+        run: |
+          python - <<'EOF'
+          import glob, os, re, time
+          import requests
+          import scrape_topic as s
+
+          url = os.environ["IN_URL"]
+          n = int(os.environ.get("IN_REPEATS", "3") or 3)
+          proxies = s.build_proxies()
+          host = re.sub(r"^.*@|^\w+://", "", os.environ.get("PROXY_URL", "")).split(":")[0]
+
+          def clean(t):
+              t = re.sub(r"\d{1,3}(\.\d{1,3}){3}", "x.x.x.x", str(t))
+              return t.replace(host, "***") if host else t
+
+          print("=== python requests (стримом, чтобы сохранить и частичный ответ)")
+          for i in range(1, n + 1):
+              t0 = time.time()
+              chunks, err, code = [], None, None
+              try:
+                  r = requests.Session().get(url, headers=s.HEADERS, proxies=proxies,
+                                             stream=True, timeout=(15, 30))
+                  code = r.status_code
+                  for c in r.iter_content(8192):
+                      chunks.append(c)
+              except Exception as e:
+                  err = f"{type(e).__name__}: {clean(e)[:120]}"
+              data = b"".join(chunks)
+              open(f"px_py_{i}.html", "wb").write(data)
+              print(f"  повтор {i}: HTTP {code} | {len(data)} Б | {time.time()-t0:.1f} с"
+                    + (f" | ОШИБКА {err}" if err else " | без ошибок"))
+
+          print()
+          print("=== разбор всех сохранённых ответов парсером скрапера")
+          groups = {}
+          for f in sorted(glob.glob("px_*.html")):
+              html = open(f, encoding="utf-8", errors="replace").read()
+              low = html.lower()
+              complete = "</body>" in low and "</html>" in low
+              try:
+                  title, posts = s.parse_page(html)
+              except Exception as e:
+                  title, posts = "", []
+              ok = complete and len(posts) > 0
+              group = re.sub(r"_\d+\.html$", "", f)
+              groups.setdefault(group, []).append(ok)
+              last = posts[-1] if posts else None
+              print(f"  {f}: {len(html)} Б | целая: {'да' if complete else 'НЕТ'} | постов: {len(posts)}"
+                    + (f" | последний: #{last['post_id']} {last['author']}" if last else ""))
+
+          print()
+          print("=== ИТОГ (сколько запросов дали целую страницу с постами)")
+          for g, res in groups.items():
+              print(f"  {g}: {sum(res)} из {len(res)}")
+          EOF
