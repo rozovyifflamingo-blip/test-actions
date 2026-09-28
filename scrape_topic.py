@@ -267,8 +267,53 @@ def fetch_via_jina(session, url):
     return text
 
 
+SCRAPINGANT_API_KEY = os.environ.get("SCRAPINGANT_API_KEY", "").strip()
+SCRAPINGANT_URL = "https://api.scrapingant.com/v2/general"
+
+
+def fetch_via_scrapingant(session, url):
+    """Основной канал, если задан SCRAPINGANT_API_KEY. Режим без браузера
+    (browser=false) — самый дешёвый; в тестах он отдавал полную страницу
+    с российского IP. Ключ передаётся заголовком, а не в URL."""
+    params = {
+        "url": url,
+        "browser": "false",
+        "proxy_type": "datacenter",
+        "proxy_country": "RU",
+    }
+    headers = {"x-api-key": SCRAPINGANT_API_KEY}
+    last_err = None
+    for attempt in (1, 2):
+        try:
+            resp = session.get(SCRAPINGANT_URL, params=params, headers=headers,
+                               proxies=None, timeout=60)
+            text = resp.text
+            print(f"    ScrapingAnt: статус {resp.status_code}, {len(text)} байт")
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}: {text[:150]!r}")
+            low = text.lower()
+            if "just a moment" in low or "один момент" in low:
+                raise ValueError("получена Cloudflare-проверка")
+            # страница должна быть целой: раньше форум обрывал ответ на
+            # полуслове, и без <body> с постами парсить нечего
+            if "</body>" not in low or "</html>" not in low:
+                raise ValueError("ответ обрезан (нет </body></html>)")
+            return text
+        except Exception as e:
+            last_err = e
+            print(f"    ScrapingAnt, попытка {attempt}/2: {type(e).__name__}: {e}")
+            if attempt == 1:
+                time.sleep(3)
+    raise last_err
+
+
 def fetch(session, url, proxies):
     print(f"[{datetime.now(TZ).strftime('%H:%M:%S')}] GET {url}")
+    if SCRAPINGANT_API_KEY and not IS_LOCAL_TEST:
+        try:
+            return fetch_via_scrapingant(session, url)
+        except Exception:
+            print("    ScrapingAnt не сработал — пробую прокси")
     try:
         resp = session.get(url, headers=HEADERS, proxies=proxies, timeout=30)
     except requests.RequestException as e:
