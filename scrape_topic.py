@@ -83,11 +83,12 @@ HEADERS = {
 }
 
 PROXY_URL = os.environ.get("PROXY_URL", "").strip()
-# запасной вариант — если вместо одной строки заведены старые 4 секрета
-PROXY_HOST = os.environ.get("PROXY_HOST", "dc03.steelproxy.com")
-PROXY_PORT = os.environ.get("PROXY_PORT", "3071")
-PROXY_USER = os.environ.get("PROXY_USER", "5caDYcWX")
-PROXY_PASS = os.environ.get("PROXY_PASS", "c8tV1Bt8")
+# запасной вариант — если вместо одной строки заведены отдельные секреты.
+# Дефолтов нет намеренно: креды не должны лежать в (публичном) репозитории.
+PROXY_HOST = os.environ.get("PROXY_HOST", "").strip()
+PROXY_PORT = os.environ.get("PROXY_PORT", "").strip()
+PROXY_USER = os.environ.get("PROXY_USER", "").strip()
+PROXY_PASS = os.environ.get("PROXY_PASS", "").strip()
 
 # участники по умолчанию — пусто, известные имена собираются только
 # из реальных команд с форума (!присоединяюсь / +атака / !срыв)
@@ -164,8 +165,72 @@ def build_proxies():
         if not re.match(r"^https?://", url):
             url = "http://" + url
         return {"http": url, "https": url}
-    url = f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
-    return {"http": url, "https": url}
+    if PROXY_HOST and PROXY_PORT:
+        auth = f"{PROXY_USER}:{PROXY_PASS}@" if PROXY_USER else ""
+        url = f"http://{auth}{PROXY_HOST}:{PROXY_PORT}"
+        return {"http": url, "https": url}
+    print("ВНИМАНИЕ: прокси не настроен (нет секрета PROXY_URL) — "
+          "запросы пойдут напрямую")
+    return None
+
+
+def _probe(session, label, url, proxies, timeout=15):
+    """Один диагностический запрос. Возвращает (ok, текст-итог, тело)."""
+    t0 = time.time()
+    try:
+        r = session.get(url, headers=HEADERS, proxies=proxies, timeout=timeout)
+        dt = time.time() - t0
+        print(f"    • {label}: HTTP {r.status_code}, {dt:.1f}с")
+        return r.status_code < 500, r.text
+    except Exception as e:
+        dt = time.time() - t0
+        # текст ошибки может содержать адрес прокси — логин/пароль в
+        # requests туда не попадают, но на всякий случай вычищаем
+        msg = str(e)
+        for secret in (PROXY_USER, PROXY_PASS):
+            if secret:
+                msg = msg.replace(secret, "***")
+        print(f"    • {label}: {type(e).__name__} через {dt:.1f}с — {msg[:160]}")
+        return False, ""
+
+
+def diagnose_network(session, proxies):
+    """Вызывается при сбое запроса к форуму: выясняет, что сломалось —
+    прокси, форум, или форум режет именно IP прокси."""
+    print("── диагностика сети ──")
+    forum_direct_ok = None
+    ip_ok = None
+    forum_proxy_ok = None
+
+    if proxies:
+        ip_ok, body = _probe(session, "прокси → api.ipify.org",
+                             "https://api.ipify.org", proxies)
+        if ip_ok:
+            print(f"      выходной IP прокси: {body.strip()[:45]}")
+        forum_proxy_ok, _ = _probe(session, "прокси → форум", BASE, proxies)
+    forum_direct_ok, _ = _probe(session, "напрямую → форум", BASE, None)
+
+    if not proxies:
+        verdict = ("прокси не настроен. " +
+                   ("Форум отвечает напрямую." if forum_direct_ok else
+                    "Форум не отвечает напрямую (лежит или режет IP раннера)."))
+    elif not ip_ok:
+        verdict = ("ПРОКСИ НЕ РАБОТАЕТ: даже нейтральный сайт через него не "
+                   "открывается (прокси мёртв / кончился трафик или срок / "
+                   "неверные креды / PROXY_URL указывает не туда).")
+    elif not forum_proxy_ok and forum_direct_ok:
+        verdict = ("прокси жив, но форум через него не отвечает, хотя напрямую "
+                   "отвечает → форум, вероятно, блокирует IP прокси. Нужен "
+                   "другой IP / тип прокси.")
+    elif not forum_proxy_ok:
+        verdict = ("прокси жив, но форум не отвечает ни через него, ни "
+                   "напрямую → скорее всего, лежит сам форум (или блок и по "
+                   "IP раннера, и по IP прокси).")
+    else:
+        verdict = ("прокси и форум сейчас отвечают → сбой был временным, "
+                   "следующий запуск должен пройти.")
+    print(f"    ВЫВОД: {verdict}")
+    print("── конец диагностики ──")
 
 
 def fetch(session, url, proxies):
@@ -607,6 +672,11 @@ def main():
             page_html = fetch(session, url, proxies)
         except Exception as e:
             print(f"    ошибка запроса: {e} — останавливаюсь")
+            if not IS_LOCAL_TEST:
+                try:
+                    diagnose_network(session, proxies)
+                except Exception as diag_err:
+                    print(f"    диагностика не удалась: {diag_err}")
             break
 
         page_title, posts = parse_page(page_html)
