@@ -31,10 +31,52 @@ jobs:
       - name: Установка Python-зависимостей
         run: pip install requests beautifulsoup4
 
+      - name: Поднять Xray (VLESS+REALITY) как локальный HTTP-прокси
+        env:
+          XRAY_CONFIG: ${{ secrets.XRAY_CONFIG }}
+        run: |
+          if [ -z "$XRAY_CONFIG" ]; then
+            echo "Секрет XRAY_CONFIG не задан — Xray не запускаю, используется PROXY_URL."
+            exit 0
+          fi
+          # прячем чувствительные поля из логов на случай, если они где-то всплывут
+          echo "$XRAY_CONFIG" | jq -r '.outbounds[] | select(.tag=="proxy") | .settings.vnext[0] | .address, .users[0].id' \
+            | while read -r v; do [ -n "$v" ] && echo "::add-mask::$v"; done
+
+          curl -fsSL -o "$RUNNER_TEMP/xray.zip" \
+            https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          mkdir -p "$RUNNER_TEMP/xray"
+          unzip -q -o "$RUNNER_TEMP/xray.zip" -d "$RUNNER_TEMP/xray"
+
+          # Из клиентского конфига берём ТОЛЬКО исходящее "proxy". Свою маршрутизацию
+          # (RU-сайты напрямую и т.п.) не переносим: antio.ru — .ru и ушёл бы в direct,
+          # а нам нужен именно трафик через Польшу.
+          echo "$XRAY_CONFIG" | jq '{
+            log: {loglevel: "warning"},
+            inbounds: [{listen: "127.0.0.1", port: 10809, protocol: "http"}],
+            outbounds: [ .outbounds[] | select(.tag=="proxy") ]
+          }' > "$RUNNER_TEMP/xray-run.json"
+
+          nohup "$RUNNER_TEMP/xray/xray" run -c "$RUNNER_TEMP/xray-run.json" \
+            > "$RUNNER_TEMP/xray.log" 2>&1 &
+
+          for i in $(seq 1 20); do
+            (echo > /dev/tcp/127.0.0.1/10809) 2>/dev/null && ok=1 && break
+            sleep 0.5
+          done
+          if [ -n "$ok" ]; then
+            echo "Xray запущен, локальный прокси: 127.0.0.1:10809"
+            echo "XRAY_LOCAL_PROXY=127.0.0.1:10809" >> "$GITHUB_ENV"
+          else
+            echo "Xray не поднялся (последние строки лога, IP скрыты):"
+            tail -n 8 "$RUNNER_TEMP/xray.log" | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g'
+          fi
+
       - name: Проверка темы форума
         env:
           TOPIC_ID: ${{ github.event.inputs.topic_id || '85048' }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          # если Xray поднялся — идём через него, иначе прежний секрет PROXY_URL
+          PROXY_URL: ${{ env.XRAY_LOCAL_PROXY || secrets.PROXY_URL }}
         run: python scrape_topic.py
 
       # -- Решаем, есть ли реальные изменения -- от этого зависит,
