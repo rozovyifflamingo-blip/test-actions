@@ -88,23 +88,23 @@ jobs:
           h="${p#*@}"; h="${h%%:*}"; h="${h#*://}"
           [ -n "$h" ] && echo "::add-mask::$h"
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          for u in "https://antio.ru/" \
-                   "https://antio.ru/index.php?showtopic=85048&st=0"; do
-            echo "=== $u"
-            curl -sS -i -o "$RUNNER_TEMP/resp.txt" --max-time 15 -x "$p" -A "$UA" \
-                 -H "Accept-Language: ru,en;q=0.8" "$u" 2>&1 \
-                 | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g' || true
-            echo "--- получено байт: $(wc -c < "$RUNNER_TEMP/resp.txt")"
-            echo "--- заголовки (без cookie):"
-            sed -n '1,/^\r\?$/p' "$RUNNER_TEMP/resp.txt" | grep -vi '^set-cookie' | head -25
-            echo "--- <title>: $(grep -a -o -i '<title>[^<]*' "$RUNNER_TEMP/resp.txt" | head -1)"
-            echo "--- начало тела:"
-            sed '1,/^\r\?$/d' "$RUNNER_TEMP/resp.txt" | tr -d '\r' | sed -E 's/<[^>]+>/ /g' | tr -s ' \n' | head -c 500
-            echo
-            echo "--- конец тела:"
-            tail -c 300 "$RUNNER_TEMP/resp.txt" | tr -d '\r'
-            echo
-          done
+          T="https://antio.ru/index.php?showtopic=85048&st=0"
+          run() {  # run "описание" <доп. аргументы curl> URL
+            local label="$1"; shift
+            local out
+            out=$(curl -sS -o /dev/null --max-time 20 -x "$p" -A "$UA" \
+                  -H "Accept-Language: ru,en;q=0.8" \
+                  -w "HTTP %{http_code}, скачано %{size_download} Б, %{time_total}с" \
+                  "$@" 2>&1 | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/x.x.x.x/g') || true
+            echo "* $label: $out"
+          }
+          echo "--- контроль: большой файл с нейтрального сайта (300 КБ) через прокси"
+          run "speed.cloudflare 300КБ" "https://speed.cloudflare.com/__down?bytes=300000"
+          echo "--- форум, разные режимы"
+          run "форум, по умолчанию (h2)" "$T"
+          run "форум, HTTP/1.1" --http1.1 "$T"
+          run "форум, HTTP/1.1 + gzip" --http1.1 --compressed "$T"
+          run "форум, HTTP/1.1 + TLS1.2" --http1.1 --tlsv1.2 "$T"
 
       - name: Проверка темы форума
         env:
