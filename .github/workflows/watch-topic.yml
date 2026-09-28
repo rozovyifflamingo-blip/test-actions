@@ -34,7 +34,12 @@ jobs:
       - name: Поднять Xray (VLESS+REALITY) как локальный HTTP-прокси
         env:
           XRAY_CONFIG: ${{ secrets.XRAY_CONFIG }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
+          if [ -n "$PROXY_URL" ]; then
+            echo "Задан секрет PROXY_URL — Xray не нужен, пропускаю."
+            exit 0
+          fi
           if [ -z "$XRAY_CONFIG" ]; then
             echo "Секрет XRAY_CONFIG не задан — Xray не запускаю, используется PROXY_URL."
             exit 0
@@ -75,8 +80,8 @@ jobs:
       - name: Проверка темы форума
         env:
           TOPIC_ID: ${{ github.event.inputs.topic_id || '85048' }}
-          # если Xray поднялся — идём через него, иначе прежний секрет PROXY_URL
-          PROXY_URL: ${{ env.XRAY_LOCAL_PROXY || secrets.PROXY_URL }}
+          # приоритет у явно заданного PROXY_URL; Xray — запасной вариант
+          PROXY_URL: ${{ secrets.PROXY_URL || env.XRAY_LOCAL_PROXY }}
         run: python scrape_topic.py
 
       # -- Решаем, есть ли реальные изменения -- от этого зависит,
