@@ -1,0 +1,101 @@
+name: Тест ScrapingAnt (ручной)
+
+# Отдельный workflow для быстрой проверки: только ручной запуск, ничего не
+# коммитит и не трогает state.json/actions.json. Нужен секрет
+# SCRAPINGANT_API_KEY (Settings -> Secrets and variables -> Actions).
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Какую страницу форума загрузить"
+        required: false
+        default: "https://antio.ru/index.php?showtopic=85048&st=0"
+      proxy_type:
+        description: "Тип прокси ScrapingAnt (residential расходует кредитов сильно больше)"
+        type: choice
+        default: datacenter
+        options:
+          - datacenter
+          - residential
+      proxy_country:
+        description: "Страна выходного IP (двухбуквенный код)"
+        required: false
+        default: "RU"
+      browser:
+        description: "Рендерить страницу браузером (выключить = дешевле, но слабее против защиты)"
+        type: boolean
+        default: true
+      return_page_source:
+        description: "Вернуть исходный HTML, а не DOM после JS"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrapingant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка Python и зависимостей
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests beautifulsoup4
+
+      - name: Запрос через ScrapingAnt
+        env:
+          SA_KEY: ${{ secrets.SCRAPINGANT_API_KEY }}
+          IN_URL: ${{ github.event.inputs.url }}
+          IN_PROXY_TYPE: ${{ github.event.inputs.proxy_type }}
+          IN_COUNTRY: ${{ github.event.inputs.proxy_country }}
+          IN_BROWSER: ${{ github.event.inputs.browser }}
+          IN_SOURCE: ${{ github.event.inputs.return_page_source }}
+        run: |
+          if [ -z "$SA_KEY" ]; then
+            echo "::error::Не задан секрет SCRAPINGANT_API_KEY"
+            exit 1
+          fi
+          echo "Параметры: proxy_type=$IN_PROXY_TYPE, country=$IN_COUNTRY, browser=$IN_BROWSER, return_page_source=$IN_SOURCE"
+          echo "URL: $IN_URL"
+
+          code=$(curl -sS -G -o sa_resp.html --max-time 150 \
+            -H "x-api-key: $SA_KEY" \
+            --data-urlencode "url=$IN_URL" \
+            --data-urlencode "proxy_type=$IN_PROXY_TYPE" \
+            --data-urlencode "proxy_country=$IN_COUNTRY" \
+            --data-urlencode "browser=$IN_BROWSER" \
+            --data-urlencode "return_page_source=$IN_SOURCE" \
+            -w "%{http_code} %{size_download} %{time_total}" \
+            "https://api.scrapingant.com/v2/general" 2>&1) || true
+          echo "curl: $code   (HTTP-код, байт, секунд)"
+          echo "--- получено байт: $(wc -c < sa_resp.html)"
+          echo "--- <title>: $(grep -a -o -i '<title>[^<]*' sa_resp.html | head -1)"
+          if grep -a -qiE 'just a moment|один момент' sa_resp.html; then
+            echo "--- ВНИМАНИЕ: в ответе Cloudflare-проверка"
+          fi
+          echo "--- начало ответа:"
+          head -c 400 sa_resp.html | tr -d '\r'
+          echo
+          echo "--- конец ответа:"
+          tail -c 200 sa_resp.html | tr -d '\r'
+          echo
+
+      - name: Разбор ответа парсером скрапера (parse_page)
+        run: |
+          python - <<'EOF'
+          import scrape_topic as s
+          html = open("sa_resp.html", encoding="utf-8", errors="replace").read()
+          title, posts = s.parse_page(html)
+          print(f"Заголовок: {title}")
+          print(f"Найдено постов: {len(posts)}")
+          for p in posts[:3] + posts[-2:]:
+              print(f"  #{p['post_id']} | {p['author']} | {p['timestamp']} | {p['text'][:70]!r}")
+          if not posts:
+              print("ПОСТОВ НЕТ: страница пришла, но парсер их не нашёл "
+                    "(заглушка защиты или другая разметка)")
+          EOF
