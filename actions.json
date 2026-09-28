@@ -52,7 +52,20 @@
       "is_admin_action": false,
       "context": "!присоединяюсь 3 участника есть. С",
       "post_time": "2026-09-27T01:40:27+00:00"
+    },
+    {
+      "id": "2719347:join:0",
+      "post_id": "2719347",
+      "pos": 0,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "join",
+      "date": "2026-09-28",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!присоединяюсь",
+      "post_time": "2026-09-27T22:19:49+00:00"
     }
   ],
-  "updated": "2026-09-27T04:40:51+03:00"
+  "updated": "2026-09-28T05:53:44+03:00"
 }
