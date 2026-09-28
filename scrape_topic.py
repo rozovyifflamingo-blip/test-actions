@@ -209,6 +209,9 @@ def diagnose_network(session, proxies):
             print(f"      выходной IP прокси: {body.strip()[:45]}")
         forum_proxy_ok, _ = _probe(session, "прокси → форум", BASE, proxies)
     forum_direct_ok, _ = _probe(session, "напрямую → форум", BASE, None)
+    if not IS_LOCAL_TEST:
+        _probe(session, "Jina Reader → форум", JINA_PREFIX + BASE, None,
+               timeout=45)
 
     if not proxies:
         verdict = ("прокси не настроен. " +
@@ -233,9 +236,52 @@ def diagnose_network(session, proxies):
     print("── конец диагностики ──")
 
 
+JINA_API_KEY = os.environ.get("JINA_API_KEY", "").strip()  # необязательно: выше лимиты
+JINA_PREFIX = "https://r.jina.ai/"
+
+
+def fetch_via_jina(session, url):
+    """Запасной канал: Jina Reader сам ходит на форум со своих серверов и
+    отдаёт HTML. Наш прокси тут не нужен (proxies=None), поэтому и его
+    проблемы с большими ответами не мешают. X-No-Cache — чтобы не получать
+    закэшированную (до часа) старую версию страницы."""
+    headers = {
+        "X-Return-Format": "html",
+        "X-No-Cache": "true",
+        "X-Timeout": "40",
+        "Accept-Language": HEADERS.get("Accept-Language", "ru,en;q=0.8"),
+    }
+    if JINA_API_KEY:
+        headers["Authorization"] = f"Bearer {JINA_API_KEY}"
+    print(f"    запасной канал: Jina Reader → {url}")
+    resp = session.get(JINA_PREFIX + url, headers=headers,
+                       proxies=None, timeout=60)
+    text = resp.text
+    print(f"    Jina: статус {resp.status_code}, {len(text)} байт")
+    resp.raise_for_status()
+    low = text.lower()
+    if "<html" not in low and "<body" not in low:
+        raise ValueError("Jina вернул не HTML")
+    if "just a moment" in low or "один момент" in low:
+        raise ValueError("Jina получил Cloudflare-проверку")
+    return text
+
+
 def fetch(session, url, proxies):
     print(f"[{datetime.now(TZ).strftime('%H:%M:%S')}] GET {url}")
-    resp = session.get(url, headers=HEADERS, proxies=proxies, timeout=30)
+    try:
+        resp = session.get(url, headers=HEADERS, proxies=proxies, timeout=30)
+    except requests.RequestException as e:
+        # основной канал (прокси) не сработал — пробуем Jina Reader.
+        # Только для настоящего форума, не для локального эмулятора.
+        if IS_LOCAL_TEST:
+            raise
+        print(f"    основной канал не сработал: {type(e).__name__}")
+        try:
+            return fetch_via_jina(session, url)
+        except Exception as e2:
+            print(f"    запасной канал тоже не сработал: {e2}")
+            raise e  # наверх уходит исходная ошибка
     print(f"    статус {resp.status_code}, {len(resp.text)} байт")
     if "Just a moment" in resp.text or "Один момент" in resp.text:
         print("    Cloudflare-проверка. Прерываю.")

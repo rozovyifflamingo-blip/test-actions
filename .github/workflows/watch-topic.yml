@@ -111,6 +111,8 @@ jobs:
           TOPIC_ID: ${{ github.event.inputs.topic_id || '85048' }}
           # приоритет у явно заданного PROXY_URL; Xray — запасной вариант
           PROXY_URL: ${{ secrets.PROXY_URL || env.XRAY_LOCAL_PROXY }}
+          # необязательно: ключ Jina Reader (выше лимиты запасного канала)
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
         run: python scrape_topic.py
 
       # -- Решаем, есть ли реальные изменения -- от этого зависит,
