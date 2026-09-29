@@ -117,7 +117,20 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-09-29T09:49:50+00:00"
+    },
+    {
+      "id": "2719684:attack:0",
+      "post_id": "2719684",
+      "pos": 0,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "attack",
+      "date": "2026-09-28",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака",
+      "post_time": "2026-09-29T15:53:32+00:00"
     }
   ],
-  "updated": "2026-09-29T16:08:19+03:00"
+  "updated": "2026-09-29T21:39:06+03:00"
 }
