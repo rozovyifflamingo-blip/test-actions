@@ -130,7 +130,20 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-09-29T15:53:32+00:00"
+    },
+    {
+      "id": "2719730:sryv:0",
+      "post_id": "2719730",
+      "pos": 0,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "sryv",
+      "date": "2026-09-29",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!срыв",
+      "post_time": "2026-09-29T20:14:24+00:00"
     }
   ],
-  "updated": "2026-09-29T21:39:06+03:00"
+  "updated": "2026-09-30T01:39:36+03:00"
 }
