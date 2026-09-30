@@ -2713,7 +2713,7 @@ function handleParticipantAttack(participant, avatarEl, date, viaAdmin) {
 
   appendThrowToStrip(participant.id, d1, d2, doubleSword ? d3 : null);
 
-  setTimeout(() => {
+  afterHit(() => {
     if (currentHP <= 0) return; // enemy already killed by an earlier hit
     let finalDmg = dmg;
 
@@ -3182,9 +3182,25 @@ function forumExile(name, date) {
 }
 
 // data: {events:[{id,date,author,target,command,post_id,is_admin_action}]}
+// Пока идёт проигрывание пачки событий с форума (ingestFeed), вся логика
+// удара должна отработать МГНОВЕННО и синхронно, в том же порядке, в каком
+// её вызвал цикл. В живой игре (клик по аватару, автобой) урон применяется
+// через afterHit(fn, 180) — специально с задержкой, для анимации взмаха.
+// Раньше здесь всегда стоял setTimeout(...,180), и при проигрывании пачки
+// все удары откладывались на 180мс, а срыв/джойн писались в лог сразу —
+// из-за этого порядок строк в логе не совпадал ни с датами событий, ни
+// с реальным порядком постов на форуме.
+let REPLAYING_FEED = false;
+function afterHit(fn, ms) {
+  if (REPLAYING_FEED) fn();
+  else setTimeout(fn, ms);
+}
+
 function ingestFeed(data) {
   const items = Array.isArray(data) ? data : (data && data.events) || [];
   let applied = 0;
+  REPLAYING_FEED = true;
+  try {
   items.slice()
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
     .forEach(ev => {
@@ -3203,6 +3219,9 @@ function ingestFeed(data) {
       else if (ev.command === "start")  addLogEntry("Бой начался", date);
       else addLogEntry(`${who} ${ev.command}`, date);
     });
+  } finally {
+    REPLAYING_FEED = false;
+  }
   return applied;
 }
 window.ingestFeed = ingestFeed; // можно скормить JSON вручную из консоли
