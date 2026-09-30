@@ -195,7 +195,20 @@
       "is_admin_action": false,
       "context": "!срыв 28.09 +атака 29.09",
       "post_time": "2026-09-30T10:55:49+00:00"
+    },
+    {
+      "id": "2719906:attack:0",
+      "post_id": "2719906",
+      "pos": 0,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "attack",
+      "date": "2026-09-30",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 30.09",
+      "post_time": "2026-09-30T21:09:50+00:00"
     }
   ],
-  "updated": "2026-09-30T17:12:23+03:00"
+  "updated": "2026-10-01T02:10:27+03:00"
 }
