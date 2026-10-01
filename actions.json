@@ -208,7 +208,20 @@
       "is_admin_action": false,
       "context": "+атака 30.09",
       "post_time": "2026-09-30T21:09:50+00:00"
+    },
+    {
+      "id": "2719992:attack:0",
+      "post_id": "2719992",
+      "pos": 0,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "attack",
+      "date": "2026-09-30",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака",
+      "post_time": "2026-10-01T09:12:15+00:00"
     }
   ],
-  "updated": "2026-10-01T02:10:27+03:00"
+  "updated": "2026-10-01T19:22:33+03:00"
 }
