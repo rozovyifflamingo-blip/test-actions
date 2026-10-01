@@ -221,7 +221,20 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-10-01T09:12:15+00:00"
+    },
+    {
+      "id": "2720124:attack:0",
+      "post_id": "2720124",
+      "pos": 0,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "attack",
+      "date": "2026-10-01",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака",
+      "post_time": "2026-10-01T19:53:35+00:00"
     }
   ],
-  "updated": "2026-10-01T19:22:33+03:00"
+  "updated": "2026-10-02T00:11:57+03:00"
 }
