@@ -3276,11 +3276,20 @@ function restoreBattleState(s) {
   try {
     rng.setState(s.rngState ?? 0);
     vrng.setState(s.vrngState ?? 0);
-    participants = Array.isArray(s.participants) ? s.participants : [];
+    // ВАЖНО: клонируем, а не присваиваем s.participants/s.logEntries напрямую.
+    // "= s.participants" даёт ссылку на тот же массив/объекты, что лежат в s.
+    // Ниже spawnEncounterEntry() (вызванная только ради перерисовки панели
+    // босса) мутирует participants (сбрасывает bossHits/damageCurrent и т.п.)
+    // и дописывает в logEntries фиктивную строку "Появился X" — без клонирования
+    // эти мутации бьют по тому же объекту, что лежит в s, и "откат" ниже
+    // (`= s.participants`/`= s.logEntries`) оказывается самообманом: он
+    // "восстанавливает" уже испорченные ссылки на те же самые объекты.
+    const cloneJSON = x => JSON.parse(JSON.stringify(x));
+    participants = Array.isArray(s.participants) ? cloneJSON(s.participants) : [];
     nextId = s.nextId || (participants.length + 1);
     MAX_HP = s.MAX_HP || 0;
     currentHP = s.currentHP ?? MAX_HP;
-    logEntries = Array.isArray(s.logEntries) ? s.logEntries : [];
+    logEntries = Array.isArray(s.logEntries) ? cloneJSON(s.logEntries) : [];
     totalDamage = s.totalDamage || 0;
     totalTurns = s.totalTurns || 0;
     totalHitsGlobal = s.totalHitsGlobal || 0;
@@ -3315,8 +3324,11 @@ function restoreBattleState(s) {
       currentEnemyDrains = !!s.currentEnemyDrains;
       enemyRoundsDone = s.enemyRoundsDone || 0;
       currentDrainThreshold = s.currentDrainThreshold ?? 1;
-      participants = Array.isArray(s.participants) ? s.participants : participants;
-      logEntries = Array.isArray(s.logEntries) ? s.logEntries : logEntries;
+      // Снова клонируем — на этот раз из s, который (в отличие от переменных
+      // participants/logEntries выше) spawnEncounterEntry() трогать не могла:
+      // это оригинальный объект из battle_state.json, а не рабочая копия.
+      participants = Array.isArray(s.participants) ? cloneJSON(s.participants) : participants;
+      logEntries = Array.isArray(s.logEntries) ? cloneJSON(s.logEntries) : logEntries;
     }
 
     renderParticipants();
