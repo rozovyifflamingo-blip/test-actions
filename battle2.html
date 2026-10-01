@@ -1282,12 +1282,19 @@ function _hashSeed(str) {                       // FNV-1a → 32-битное ч
   return h >>> 0;
 }
 function _mulberry32(a) {
-  return function () {
+  const gen = function () {
     a = (a + 0x6D2B79F5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  // Для battle_state.json: сохраняем/восстанавливаем не только зерно, а
+  // именно текущее внутреннее число. Без этого при каждой перезагрузке
+  // генератор начинал бы заново с первого броска, и уже выпавшие кубики
+  // повторились бы для новых событий.
+  gen.getState = () => a;
+  gen.setState = (v) => { a = v >>> 0; };
+  return gen;
 }
 const BATTLE_SEED = new URLSearchParams(location.search).get("seed") || "antio-battle-85048";
 const rng  = _mulberry32(_hashSeed(BATTLE_SEED));
@@ -3226,6 +3233,114 @@ function ingestFeed(data) {
 }
 window.ingestFeed = ingestFeed; // можно скормить JSON вручную из консоли
 
+// ── Сохранение/восстановление состояния боя (battle_state.json) ──
+// Раньше при каждой загрузке страницы бой проигрывался заново целиком из
+// actions.json: все удары, срывы и т.д. с самого начала. Из-за этого при
+// любом изменении в середине пересчитывалось вообще всё, что шло после —
+// включая уже показанные урон/лут/лог. Теперь вместо этого:
+//   1) при старте читаем battle_state.json — это готовый, уже посчитанный
+//      результат всех ПРЕЖНИХ событий (HP, лут, лог как готовые строки,
+//      какие id событий уже обработаны, и т.д.);
+//   2) поверх него через pollFeed()/ingestFeed() доигрываем только то
+//      новое, чего нет в feedSeen из сохранённого состояния.
+// Старое не пересчитывается вообще, просто отрисовывается как было.
+const BATTLE_STATE_URL = "battle_state.json";
+const BATTLE_STATE_VERSION = 1;
+
+function serializeBattleState() {
+  return {
+    version: BATTLE_STATE_VERSION,
+    seed: BATTLE_SEED,
+    rngState: rng.getState(),
+    vrngState: vrng.getState(),
+    participants,
+    nextId,
+    MAX_HP, currentHP,
+    logEntries,
+    totalDamage, totalTurns, totalHitsGlobal,
+    battleStarted,
+    encounterIdx, _lastMobId,
+    currentEnemyId, currentLootIds, lastMobHP,
+    enemyHits, currentEnemyRetaliates, currentEnemyDrains,
+    enemyRoundsDone, currentDrainThreshold,
+    feedSeen: [...feedSeen],
+  };
+}
+window.exportBattleState = serializeBattleState; // зовёт screenshot.js после снимка
+
+// Возвращает true, если состояние реально восстановлено (файл был и подошёл
+// под текущий BATTLE_SEED — при смене seed прошлое состояние не совместимо,
+// им просто не пользуемся, бой начнётся с нуля на новом сиде).
+function restoreBattleState(s) {
+  if (!s || typeof s !== "object" || s.seed !== BATTLE_SEED) return false;
+  try {
+    rng.setState(s.rngState ?? 0);
+    vrng.setState(s.vrngState ?? 0);
+    participants = Array.isArray(s.participants) ? s.participants : [];
+    nextId = s.nextId || (participants.length + 1);
+    MAX_HP = s.MAX_HP || 0;
+    currentHP = s.currentHP ?? MAX_HP;
+    logEntries = Array.isArray(s.logEntries) ? s.logEntries : [];
+    totalDamage = s.totalDamage || 0;
+    totalTurns = s.totalTurns || 0;
+    totalHitsGlobal = s.totalHitsGlobal || 0;
+    battleStarted = !!s.battleStarted;
+    encounterIdx = s.encounterIdx || 0;
+    _lastMobId = s._lastMobId ?? null;
+    currentEnemyId = s.currentEnemyId ?? null;
+    currentLootIds = Array.isArray(s.currentLootIds) ? s.currentLootIds : [];
+    lastMobHP = s.lastMobHP || 200;
+    enemyHits = s.enemyHits || 0;
+    currentEnemyRetaliates = !!s.currentEnemyRetaliates;
+    currentEnemyDrains = !!s.currentEnemyDrains;
+    enemyRoundsDone = s.enemyRoundsDone || 0;
+    currentDrainThreshold = s.currentDrainThreshold ?? 1;
+    (Array.isArray(s.feedSeen) ? s.feedSeen : []).forEach(k => feedSeen.add(k));
+
+    // Панель босса (имя/арт/иконка лута) рисует только spawnEncounterEntry(),
+    // своего отдельного "перерисовать текущего врага" у неё нет. Поэтому
+    // зовём её для уже активного по сохранённому состоянию противника —
+    // это честно перерисует DOM-панель — а затем поверх неё возвращаем
+    // настоящие сохранённые HP/прогресс/лог, которые этот вызов иначе
+    // сбросил бы на свежие "враг только что заспавнился" значения.
+    if (battleStarted && encounterIdx > 0 && encounterQueue[encounterIdx - 1]) {
+      spawnEncounterEntry(encounterQueue[encounterIdx - 1]);
+      MAX_HP = s.MAX_HP || MAX_HP;
+      currentHP = s.currentHP ?? currentHP;
+      lastMobHP = s.lastMobHP || lastMobHP;
+      currentEnemyId = s.currentEnemyId ?? currentEnemyId;
+      currentLootIds = Array.isArray(s.currentLootIds) ? s.currentLootIds : currentLootIds;
+      enemyHits = s.enemyHits || 0;
+      currentEnemyRetaliates = !!s.currentEnemyRetaliates;
+      currentEnemyDrains = !!s.currentEnemyDrains;
+      enemyRoundsDone = s.enemyRoundsDone || 0;
+      currentDrainThreshold = s.currentDrainThreshold ?? 1;
+      participants = Array.isArray(s.participants) ? s.participants : participants;
+      logEntries = Array.isArray(s.logEntries) ? s.logEntries : logEntries;
+    }
+
+    renderParticipants();
+    updateHP(false);
+    renderLog();
+    return true;
+  } catch (e) {
+    console.warn("Не удалось восстановить battle_state.json:", e);
+    return false;
+  }
+}
+
+async function fetchBattleState() {
+  if (!BATTLE_STATE_URL) return false;
+  try {
+    const r = await fetch(BATTLE_STATE_URL, { cache: "no-store" });
+    if (!r.ok) return false; // файла ещё нет — первый запуск, это нормально
+    return restoreBattleState(await r.json());
+  } catch (e) {
+    console.warn("battle_state.json недоступен:", e);
+    return false;
+  }
+}
+
 window.RENDER_READY = false;   // используется внешним скринером: страница ждёт первого применения данных
 let renderReadyTick = 0;
 
@@ -3271,8 +3386,15 @@ async function init() {
   enqueueBoss({ name: "ВАМПИР МОНАРХ", loot: ["vampire_heart", "fangs"], qty: { vampire_heart: 2 }, drain: true });
   enqueueBoss({ name: "ОБОРОТЕНЬ КАННИБАЛ", loot: ["champion_cup", "courage_star"], retaliate: true, drain: true, drainThreshold: 1 / 3 });
 
-  renderParticipants();
-  updateHP(false);
+  // Сначала пробуем восстановить уже посчитанный бой из battle_state.json —
+  // тогда ничего из прошлого не пересчитывается. Если файла ещё нет (самый
+  // первый запуск) или seed сменился — restored=false, и всё идёт как раньше.
+  const restored = await fetchBattleState();
+  if (!restored) {
+    renderParticipants();
+    updateHP(false);
+    addLogEntry("Нажмите на аватар, чтобы нанести первый удар — тогда появится враг!");
+  }
 
   addBtn.addEventListener("click", () => {
     addParticipant(nameInput.value);
@@ -3283,9 +3405,7 @@ async function init() {
     if (e.key === "Enter") { addParticipant(nameInput.value); nameInput.value = ""; }
   });
 
-  addLogEntry("Нажмите на аватар, чтобы нанести первый удар — тогда появится враг!");
-
-  await pollFeed();               // первое применение фида — после него страница «готова»
+  await pollFeed();               // доигрываем только новое поверх восстановленного (или с нуля)
   if (FEED_URL) {
     setInterval(pollFeed, FEED_INTERVAL_MS);
   }

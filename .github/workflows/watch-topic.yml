@@ -185,7 +185,7 @@ jobs:
           # добавляем только нужные файлы (и только если они существуют) —
           # чтобы не подхватить node_modules/package.json, оставшиеся
           # от установки playwright-core
-          for f in actions.json state.json topic.html battle_preview.png battle_log.png calendar_preview.png; do
+          for f in actions.json state.json topic.html battle_preview.png battle_log.png calendar_preview.png battle_state.json; do
             [ -f "$f" ] && git add -- "$f"
           done
           if git diff --cached --quiet; then

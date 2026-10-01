@@ -43,6 +43,16 @@ const TARGET_LOG_OUT =
   path.join(path.dirname(TARGET_MAIN_OUT), "battle_log.png");
 const SKIP_LOG = process.env.SCREENSHOT_SKIP_LOG === "1";
 
+// ── Сохранение состояния боя (battle_state.json) ───────────────────────
+// После снимка забираем из страницы её посчитанное состояние (HP, лог,
+// лут, feedSeen, внутреннее число генератора и т.д.) и кладём в файл —
+// при следующем запуске battle2.html подхватит его и доиграет только
+// новые события, вместо того чтобы пересчитывать бой с нуля.
+const TARGET_STATE_OUT =
+  process.env.SCREENSHOT_OUT_STATE ||
+  path.join(path.dirname(TARGET_MAIN_OUT), "battle_state.json");
+const SKIP_STATE = process.env.SCREENSHOT_SKIP_STATE === "1";
+
 const LOG_FONT_FILE = path.join(__dirname, "CGCHR-Regular.otf");
 // Нативный кегль CGCHR: unitsPerEm=640, узлы контуров лежат на сетке
 // шагом 128 unit (640/128=5) → 1 "пиксель" шрифта = font-size/5 физических px.
@@ -64,7 +74,7 @@ const LOG_SKIP = [/^Нажмите на аватар/];
 const LOG_COLOR_TEXT = "#222222";    // основной текст — тёмный
 const LOG_COLOR_DAMAGE = "#c62828";  // урон — красный
 
-async function shootPage(browser, url, out, { transparent = false, collectLog = false } = {}) {
+async function shootPage(browser, url, out, { transparent = false, collectLog = false, exportState = false } = {}) {
   const page = await browser.newPage({
     viewport: VIEWPORT,
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
@@ -136,18 +146,25 @@ async function shootPage(browser, url, out, { transparent = false, collectLog = 
     await page.locator(".container").screenshot({ path: out, omitBackground: transparent });
     console.log(`Скриншот сохранён: ${out}`);
 
-    // Забираем журнал боя прямо из страницы (глобальный logEntries) —
+    // Забираем журнал боя и/или посчитанное состояние прямо из страницы —
     // пока она ещё открыта. Разбор HTML — через DOMParser (он «мёртвый»,
     // скрипты и картинки из текста записей не выполняются).
-    if (collectLog) {
-      return await page.evaluate(() => {
-        const toText = html =>
-          new DOMParser().parseFromString(String(html), "text/html").body.textContent;
-        const entries = typeof logEntries !== "undefined" ? logEntries : [];
-        return {
-          lines: entries.map(e => toText(e.text)),   // в странице: новые записи первыми
-        };
-      });
+    if (collectLog || exportState) {
+      return await page.evaluate(({ collectLog, exportState }) => {
+        const result = {};
+        if (collectLog) {
+          const toText = html =>
+            new DOMParser().parseFromString(String(html), "text/html").body.textContent;
+          const entries = typeof logEntries !== "undefined" ? logEntries : [];
+          result.lines = entries.map(e => toText(e.text)); // в странице: новые записи первыми
+        }
+        if (exportState) {
+          result.state = typeof window.exportBattleState === "function"
+            ? window.exportBattleState()
+            : null;
+        }
+        return result;
+      }, { collectLog, exportState });
     }
   } finally {
     await page.close();
@@ -263,7 +280,20 @@ async function main() {
   });
 
   try {
-    const log = await shootPage(browser, TARGET_MAIN_URL, TARGET_MAIN_OUT, { collectLog: !SKIP_LOG });
+    const log = await shootPage(browser, TARGET_MAIN_URL, TARGET_MAIN_OUT, {
+      collectLog: !SKIP_LOG,
+      exportState: !SKIP_STATE,
+    });
+
+    if (!SKIP_STATE && log && log.state) {
+      try {
+        fs.writeFileSync(TARGET_STATE_OUT, JSON.stringify(log.state));
+        console.log(`Состояние боя сохранено: ${TARGET_STATE_OUT}`);
+      } catch (e) {
+        // Как и журнал — дополнение; его сбой не должен валить основной скрин
+        console.error("Не удалось сохранить battle_state.json:", e.message || e);
+      }
+    }
 
     if (!SKIP_LOG && log) {
       try {
