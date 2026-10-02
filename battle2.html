@@ -3338,6 +3338,17 @@ function restoreBattleState(s) {
       logEntries = Array.isArray(s.logEntries) ? cloneJSON(s.logEntries) : logEntries;
     }
 
+    // Самолечение зависшего состояния «враг мёртв, но замена не произошла».
+    // Раньше scheduleNextSpawn() всегда ставила настоящий setTimeout — если
+    // враг умирал прямо перед закрытием страницы (скриншот снят раньше, чем
+    // таймер успевал сработать), currentHP<=0 так и сохранялся навсегда:
+    // верхний guard в handleParticipantAttack молча гасил все последующие
+    // удары по этому "трупу". Если застали именно такое состояние — сразу
+    // спавним следующего по очереди, прежде чем применять новые события.
+    if (battleStarted && currentHP <= 0 && encounterIdx < encounterQueue.length) {
+      spawnNext();
+    }
+
     renderParticipants();
     updateHP(false);
     renderLog();
