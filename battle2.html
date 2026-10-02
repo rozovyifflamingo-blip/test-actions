@@ -2210,8 +2210,52 @@ function renderParticipants() {
 
     tr.append(tdA, tdD);
     participantsBody.appendChild(tr);
+    renderParticipantItems(p);
   });
   updateBossPanelCap();
+}
+
+// Слоты под предметы в createAvatarCard() всегда создаются пустыми — их
+// заполняет только giveItemToParticipant() в момент выдачи (пишет и в
+// p.items, и сразу в DOM). При восстановлении battle_state.json старые
+// предметы уже лежат в p.items, но заново их никто не "выдаёт" (иначе бы
+// задвоился счётчик count) — значит и слот без этой функции остался бы
+// пустым. Здесь только отрисовка из уже готовых данных, без изменения
+// participant.items и без счётчиков заново.
+function renderParticipantItems(p) {
+  if (!p.items || !p.items.length) return;
+  const row = document.querySelector(`tr[data-participant-id="${p.id}"]`);
+  if (!row) return;
+  const slotsEl = row.querySelector(".avatar-slots");
+  if (!slotsEl) return;
+
+  p.items.forEach(item => {
+    let targetSlot = null;
+    for (const s of slotsEl.querySelectorAll(".avatar-slot")) {
+      if (!s.querySelector("img")) { targetSlot = s; break; }
+    }
+    if (!targetSlot) {
+      const currentCount = slotsEl.querySelectorAll(".avatar-slot").length;
+      if (currentCount >= 8) return; // hard cap, как и в giveItemToParticipant
+      targetSlot = makeSlot();
+      slotsEl.appendChild(targetSlot);
+      refreshSlotLayout(slotsEl);
+    }
+    removeWhiteBackground(item.src, (cleanSrc) => {
+      const img = document.createElement("img");
+      img.src = cleanSrc;
+      img.dataset.itemId = item.id;
+      img.style.cssText = "width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block;";
+      img.title = item.name;
+      targetSlot.appendChild(img);
+      if ((item.count || 1) > 1) {
+        const badge = document.createElement("span");
+        badge.className = "slot-count";
+        badge.textContent = "×" + item.count;
+        targetSlot.appendChild(badge);
+      }
+    });
+  });
 }
 
 // Держит панель босса (.boss-panel) в размере, который она имела при
