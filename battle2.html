@@ -1614,6 +1614,13 @@ function spawnNext() {
 }
 // Called when an enemy dies: next one appears automatically
 function scheduleNextSpawn() {
+  // При проигрывании фида (REPLAYING_FEED) следующий враг должен появиться
+  // СРАЗУ: по задумке ударить по трупу нельзя — следующее же событие в
+  // пачке должно попасть по новому врагу. Задержка 500–1500мс (для
+  // анимации в живой игре) тут неуместна: события обрабатываются в цикле
+  // почти мгновенно, и следующий удар в той же пачке успевал бы прийтись
+  // на уже мёртвого моба, пока настоящий таймер ещё тикает.
+  if (REPLAYING_FEED) { spawnNext(); return; }
   if (spawnTimer) return;
   spawnTimer = setTimeout(spawnNext, Math.max(500, 1500 / autoSpeed));
 }
