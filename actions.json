@@ -286,7 +286,46 @@
       "is_admin_action": false,
       "context": "+атака 02.10",
       "post_time": "2026-10-02T22:10:49+00:00"
+    },
+    {
+      "id": "2720346:sryv:0",
+      "post_id": "2720346",
+      "pos": 0,
+      "author": "Илон",
+      "target": "Илон",
+      "command": "sryv",
+      "date": "2026-09-30",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 30.09 +атака 01.10 !срыв 02.1",
+      "post_time": "2026-10-03T02:42:41+00:00"
+    },
+    {
+      "id": "2720346:attack:12",
+      "post_id": "2720346",
+      "pos": 12,
+      "author": "Илон",
+      "target": "Илон",
+      "command": "attack",
+      "date": "2026-10-01",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 30.09 +атака 01.10 !срыв 02.10",
+      "post_time": "2026-10-03T02:42:41+00:00"
+    },
+    {
+      "id": "2720346:sryv:25",
+      "post_id": "2720346",
+      "pos": 25,
+      "author": "Илон",
+      "target": "Илон",
+      "command": "sryv",
+      "date": "2026-10-02",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 30.09 +атака 01.10 !срыв 02.10",
+      "post_time": "2026-10-03T02:42:41+00:00"
     }
   ],
-  "updated": "2026-10-03T01:32:22+03:00"
+  "updated": "2026-10-03T09:59:53+03:00"
 }
