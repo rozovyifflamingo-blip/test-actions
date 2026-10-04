@@ -377,7 +377,33 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-10-04T10:17:28+00:00"
+    },
+    {
+      "id": "2720710:attack:0",
+      "post_id": "2720710",
+      "pos": 0,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "attack",
+      "date": "2026-09-30",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 30.09 +атака 04.10",
+      "post_time": "2026-10-04T20:55:05+00:00"
+    },
+    {
+      "id": "2720710:attack:13",
+      "post_id": "2720710",
+      "pos": 13,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "attack",
+      "date": "2026-10-04",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 30.09 +атака 04.10",
+      "post_time": "2026-10-04T20:55:05+00:00"
     }
   ],
-  "updated": "2026-10-04T17:09:15+03:00"
+  "updated": "2026-10-05T00:34:47+03:00"
 }
