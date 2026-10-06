@@ -442,7 +442,33 @@
       "is_admin_action": false,
       "context": "!срыв 05.10 +атака 04.10",
       "post_time": "2026-10-06T02:14:03+00:00"
+    },
+    {
+      "id": "2720840:attack:0",
+      "post_id": "2720840",
+      "pos": 0,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "attack",
+      "date": "2026-10-05",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака +атака",
+      "post_time": "2026-10-06T09:24:01+00:00"
+    },
+    {
+      "id": "2720902:attack:0",
+      "post_id": "2720902",
+      "pos": 0,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "attack",
+      "date": "2026-10-06",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 06.10",
+      "post_time": "2026-10-06T14:56:57+00:00"
     }
   ],
-  "updated": "2026-10-06T11:09:34+03:00"
+  "updated": "2026-10-06T18:14:25+03:00"
 }
