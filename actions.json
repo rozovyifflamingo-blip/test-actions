@@ -416,7 +416,33 @@
       "is_admin_action": false,
       "context": "!срыв 05.10",
       "post_time": "2026-10-05T20:59:05+00:00"
+    },
+    {
+      "id": "2720740:sryv:0",
+      "post_id": "2720740",
+      "pos": 0,
+      "author": "Илон",
+      "target": "Илон",
+      "command": "sryv",
+      "date": "2026-10-05",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 05.10 +атака 04.10",
+      "post_time": "2026-10-06T02:14:03+00:00"
+    },
+    {
+      "id": "2720740:attack:12",
+      "post_id": "2720740",
+      "pos": 12,
+      "author": "Илон",
+      "target": "Илон",
+      "command": "attack",
+      "date": "2026-10-04",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 05.10 +атака 04.10",
+      "post_time": "2026-10-06T02:14:03+00:00"
     }
   ],
-  "updated": "2026-10-06T04:37:10+03:00"
+  "updated": "2026-10-06T11:09:34+03:00"
 }
