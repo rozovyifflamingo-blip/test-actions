@@ -468,7 +468,46 @@
       "is_admin_action": false,
       "context": "+атака 06.10",
       "post_time": "2026-10-06T14:56:57+00:00"
+    },
+    {
+      "id": "2720995:sryv:0",
+      "post_id": "2720995",
+      "pos": 0,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "sryv",
+      "date": "2026-10-04",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 04.10 +атака 05.10 !срыв 06.1",
+      "post_time": "2026-10-06T22:13:36+00:00"
+    },
+    {
+      "id": "2720995:attack:12",
+      "post_id": "2720995",
+      "pos": 12,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "attack",
+      "date": "2026-10-05",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 04.10 +атака 05.10 !срыв 06.10",
+      "post_time": "2026-10-06T22:13:36+00:00"
+    },
+    {
+      "id": "2720995:sryv:25",
+      "post_id": "2720995",
+      "pos": 25,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "sryv",
+      "date": "2026-10-06",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "!срыв 04.10 +атака 05.10 !срыв 06.10",
+      "post_time": "2026-10-06T22:13:36+00:00"
     }
   ],
-  "updated": "2026-10-06T18:14:25+03:00"
+  "updated": "2026-10-07T02:59:05+03:00"
 }
