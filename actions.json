@@ -520,7 +520,20 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-10-07T16:29:52+00:00"
+    },
+    {
+      "id": "2721146:sryv:0",
+      "post_id": "2721146",
+      "pos": 0,
+      "author": "Fikus",
+      "target": "Fikus",
+      "command": "sryv",
+      "date": "2026-10-07",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!срыв",
+      "post_time": "2026-10-07T20:59:40+00:00"
     }
   ],
-  "updated": "2026-10-07T21:56:41+03:00"
+  "updated": "2026-10-08T02:32:52+03:00"
 }
