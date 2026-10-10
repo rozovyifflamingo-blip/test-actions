@@ -572,7 +572,20 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-10-09T08:38:58+00:00"
+    },
+    {
+      "id": "2721538:sryv:0",
+      "post_id": "2721538",
+      "pos": 0,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "sryv",
+      "date": "2026-10-09",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "!срыв",
+      "post_time": "2026-10-10T09:57:03+00:00"
     }
   ],
-  "updated": "2026-10-09T12:35:10+03:00"
+  "updated": "2026-10-10T16:34:22+03:00"
 }
