@@ -620,13 +620,26 @@ body {
   letter-spacing: 1px;
 }
 
-/* floating damage — static, stays until boss dies */
+/* floating damage — static, stays until boss dies.
+   Base state is fully visible by default (opacity:1): the pop-in effect
+   is an opt-in ".appear" modifier (same pattern as .dice.appear), removed
+   via setTimeout shortly after creation. Why: the screenshot script injects
+   "animation-play-state: paused !important" right after all events finish
+   replaying — if the base rule itself carried the animation (old version),
+   a number created during bulk replay (before any paint ever happened)
+   got frozen at the keyframe's 0% state (opacity:0) and was invisible in
+   the screenshot despite being in the DOM. Dice sidestep this exact trap
+   the same way: the "appear" class is stripped by a real setTimeout well
+   before the screenshot is taken, so by freeze-time there's no running
+   animation left to get stuck mid-flight. */
 .float-dmg {
   position: absolute; font-size: 13px;
   text-shadow: 2px 2px 0 #000, 0 0 8px rgba(0,0,0,0.8);
   pointer-events: none; z-index: 15;
   font-family: 'Press Start 2P', monospace;
-  opacity: 0;
+  opacity: 1;
+}
+.float-dmg.appear {
   animation: dmgAppear 120ms steps(3) forwards;
 }
 @keyframes dmgAppear {
@@ -2215,6 +2228,35 @@ function renderParticipants() {
   updateBossPanelCap();
 }
 
+// Находит первый свободный слот под предмет и СРАЗУ помечает его занятым
+// (data-claimed), ещё до того, как картинка реально в него легла.
+// Почему это обязательно: removeWhiteBackground() асинхронна (грузит
+// Image, ждёт onload), а картинка в слот добавляется только внутри её
+// колбэка. Если несколько предметов раздаются одному участнику ПОДРЯД,
+// в одном синхронном проходе (так и было в renderParticipantItems() —
+// forEach по p.items при восстановлении battle_state.json), поиск
+// "первого слота без <img>" для второго предмета срабатывал ДО того, как
+// колбэк первого успевал дописать свою картинку — оба предмета находили
+// один и тот же "пустой" слот и падали друг на друга в одну и ту же
+// ячейку, второй визуально "валялся под первым". claimEmptySlot() решает
+// это резервированием слота синхронно, в момент выбора, а не в момент
+// фактической отрисовки картинки.
+function claimEmptySlot(slotsEl) {
+  let targetSlot = null;
+  for (const s of slotsEl.querySelectorAll(".avatar-slot")) {
+    if (!s.querySelector("img") && !s.dataset.claimed) { targetSlot = s; break; }
+  }
+  if (!targetSlot) {
+    const currentCount = slotsEl.querySelectorAll(".avatar-slot").length;
+    if (currentCount >= 8) return null; // hard cap
+    targetSlot = makeSlot();
+    slotsEl.appendChild(targetSlot);
+    refreshSlotLayout(slotsEl);
+  }
+  targetSlot.dataset.claimed = "1";
+  return targetSlot;
+}
+
 // Слоты под предметы в createAvatarCard() всегда создаются пустыми — их
 // заполняет только giveItemToParticipant() в момент выдачи (пишет и в
 // p.items, и сразу в DOM). При восстановлении battle_state.json старые
@@ -2230,17 +2272,8 @@ function renderParticipantItems(p) {
   if (!slotsEl) return;
 
   p.items.forEach(item => {
-    let targetSlot = null;
-    for (const s of slotsEl.querySelectorAll(".avatar-slot")) {
-      if (!s.querySelector("img")) { targetSlot = s; break; }
-    }
-    if (!targetSlot) {
-      const currentCount = slotsEl.querySelectorAll(".avatar-slot").length;
-      if (currentCount >= 8) return; // hard cap, как и в giveItemToParticipant
-      targetSlot = makeSlot();
-      slotsEl.appendChild(targetSlot);
-      refreshSlotLayout(slotsEl);
-    }
+    const targetSlot = claimEmptySlot(slotsEl);
+    if (!targetSlot) return; // hard cap, как и в giveItemToParticipant
     removeWhiteBackground(item.src, (cleanSrc) => {
       const img = document.createElement("img");
       img.src = cleanSrc;
@@ -2248,6 +2281,7 @@ function renderParticipantItems(p) {
       img.style.cssText = "width:100%;height:100%;object-fit:contain;image-rendering:pixelated;display:block;";
       img.title = item.name;
       targetSlot.appendChild(img);
+      delete targetSlot.dataset.claimed;
       if ((item.count || 1) > 1) {
         const badge = document.createElement("span");
         badge.className = "slot-count";
@@ -2767,7 +2801,7 @@ function handleParticipantAttack(participant, avatarEl, date, viaAdmin) {
   // Store throw
   if (!participant.throws) participant.throws = [];
   participant.throws.push([d1, d2]);
-  if (participant.throws.length > 6) participant.throws.shift();
+  if (participant.throws.length > 7) participant.throws.shift();
 
   appendThrowToStrip(participant.id, d1, d2, doubleSword ? d3 : null);
 
@@ -2969,12 +3003,16 @@ function showFloatingDamage(dmg, color) {
   _dmgPositions.push({ x: lx, y: ly });
 
   const num = document.createElement("div");
-  num.className = "float-dmg";
+  num.className = "float-dmg appear";
   num.textContent = `-${dmg}`;
   num.style.left  = lx + "px";
   num.style.top   = ly + "px";
   num.style.color = color || "var(--damage)";
   layer.appendChild(num);
+  // Strip the pop-in animation class shortly after — see the ".float-dmg"
+  // CSS comment: this keeps the base (screenshot-visible) state free of any
+  // running animation well before the screenshot's freeze style is applied.
+  setTimeout(() => num.classList.remove("appear"), 200);
 }
 
 function clearBossDamageNumbers() {
@@ -3067,19 +3105,10 @@ function giveItemToParticipant(participant, item) {
   const slotsEl = row.querySelector(".avatar-slots");
   if (!slotsEl) return;
 
-  // Find empty slot or create a new one
-  let targetSlot = null;
-  for (const s of slotsEl.querySelectorAll(".avatar-slot")) {
-    if (!s.querySelector("img")) { targetSlot = s; break; }
-  }
-  if (!targetSlot) {
-    // All slots occupied — add a new one (max 8)
-    const currentCount = slotsEl.querySelectorAll(".avatar-slot").length;
-    if (currentCount >= 8) return; // hard cap
-    targetSlot = makeSlot();
-    slotsEl.appendChild(targetSlot);
-    refreshSlotLayout(slotsEl);
-  }
+  // Find empty slot or create a new one (reserved synchronously — see
+  // claimEmptySlot() comment for why that matters with async image loads)
+  const targetSlot = claimEmptySlot(slotsEl);
+  if (!targetSlot) return; // hard cap
 
   removeWhiteBackground(item.src, (cleanSrc) => {
     const img = document.createElement("img");
@@ -3089,6 +3118,7 @@ function giveItemToParticipant(participant, item) {
     img.title = item.name;
     img.style.animation = "lootSlotDrop 350ms steps(5) forwards";
     targetSlot.appendChild(img);
+    delete targetSlot.dataset.claimed;
   });
 }
 
