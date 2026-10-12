@@ -2931,7 +2931,11 @@ function handleParticipantAttack(participant, avatarEl, date, viaAdmin) {
       if (rewardIds.length) giveRewardLoot(rewardIds);
       // Имя противника берём с экрана — оно уже установлено на спавне (моб или босс)
       const enemyName = document.getElementById("boss-name-el")?.textContent || "Противник";
-      const eligible = participants.filter(p => (p.damageCurrent || 0) >= 1);
+      // Лут достаётся только тем, кто бил ЭТОГО врага (damageCurrent >= 1) И
+      // ещё жив на момент его смерти — поверженный участник не удаляется из
+      // participants[] (это делает только ручное "Удалить"), так что без
+      // проверки hp > 0 он так и оставался в розыгрыше как ни в чём не бывало.
+      const eligible = participants.filter(p => (p.damageCurrent || 0) >= 1 && (p.hp ?? 100) > 0);
       if (eligible.length > 0) {
         currentLootIds.filter(Boolean).forEach(id => {
           const it = LOOT_ITEMS.find(i => i.id === id);
