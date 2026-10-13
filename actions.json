@@ -676,7 +676,20 @@
       "is_admin_action": false,
       "context": "!срыв Сообщение отредактировал Lixv",
       "post_time": "2026-10-12T10:32:02+00:00"
+    },
+    {
+      "id": "2722152:attack:13",
+      "post_id": "2722152",
+      "pos": 13,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "attack",
+      "date": "2026-10-12",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака 03.10 +атака",
+      "post_time": "2026-10-13T17:26:12+00:00"
     }
   ],
-  "updated": "2026-10-12T19:59:59+03:00"
+  "updated": "2026-10-13T21:29:21+03:00"
 }
