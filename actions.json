@@ -689,7 +689,33 @@
       "is_admin_action": false,
       "context": "+атака 03.10 +атака",
       "post_time": "2026-10-13T17:26:12+00:00"
+    },
+    {
+      "id": "Илон:exile:2026-10-14",
+      "post_id": null,
+      "pos": null,
+      "author": null,
+      "target": "Илон",
+      "command": "exile",
+      "date": "2026-10-14",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "неактивен 7 дн. подряд",
+      "post_time": null
+    },
+    {
+      "id": "Fikus:exile:2026-10-14",
+      "post_id": null,
+      "pos": null,
+      "author": null,
+      "target": "Fikus",
+      "command": "exile",
+      "date": "2026-10-14",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "неактивен 7 дн. подряд",
+      "post_time": null
     }
   ],
-  "updated": "2026-10-13T21:29:21+03:00"
+  "updated": "2026-10-14T02:05:25+03:00"
 }
