@@ -780,7 +780,33 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-10-16T10:28:15+00:00"
+    },
+    {
+      "id": "2722781:attack:0",
+      "post_id": "2722781",
+      "pos": 0,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "attack",
+      "date": "2026-10-16",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака +атака",
+      "post_time": "2026-10-17T15:52:45+00:00"
+    },
+    {
+      "id": "2722799:attack:0",
+      "post_id": "2722799",
+      "pos": 0,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "attack",
+      "date": "2026-10-16",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака",
+      "post_time": "2026-10-17T16:44:15+00:00"
     }
   ],
-  "updated": "2026-10-16T16:58:55+03:00"
+  "updated": "2026-10-17T20:01:58+03:00"
 }
