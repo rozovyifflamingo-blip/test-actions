@@ -806,7 +806,20 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-10-17T16:44:15+00:00"
+    },
+    {
+      "id": "2722871:attack:0",
+      "post_id": "2722871",
+      "pos": 0,
+      "author": "Lixven",
+      "target": "Lixven",
+      "command": "attack",
+      "date": "2026-10-17",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "+атака",
+      "post_time": "2026-10-18T07:28:00+00:00"
     }
   ],
-  "updated": "2026-10-17T20:01:58+03:00"
+  "updated": "2026-10-18T14:39:50+03:00"
 }
