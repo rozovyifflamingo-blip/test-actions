@@ -1014,7 +1014,20 @@
       "is_admin_action": true,
       "context": "+атака 25.10 Семён Белянский +атака 26.10",
       "post_time": "2026-10-27T06:25:44+00:00"
+    },
+    {
+      "id": "Lixven:exile:2026-10-30",
+      "post_id": null,
+      "pos": null,
+      "author": null,
+      "target": "Lixven",
+      "command": "exile",
+      "date": "2026-10-30",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "неактивен 7 дн. подряд",
+      "post_time": null
     }
   ],
-  "updated": "2026-10-27T09:27:09+03:00"
+  "updated": "2026-10-30T02:22:52+03:00"
 }
