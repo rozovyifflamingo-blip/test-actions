@@ -1118,7 +1118,33 @@
       "is_admin_action": false,
       "context": "+атака",
       "post_time": "2026-11-02T18:17:27+00:00"
+    },
+    {
+      "id": "2725659:attack:0",
+      "post_id": "2725659",
+      "pos": 0,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "attack",
+      "date": "2026-11-03",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 3.11 +атака 4.11",
+      "post_time": "2026-11-04T16:28:37+00:00"
+    },
+    {
+      "id": "2725659:attack:12",
+      "post_id": "2725659",
+      "pos": 12,
+      "author": "Семён Белянский",
+      "target": "Семён Белянский",
+      "command": "attack",
+      "date": "2026-11-04",
+      "date_from_text": true,
+      "is_admin_action": false,
+      "context": "+атака 3.11 +атака 4.11",
+      "post_time": "2026-11-04T16:28:37+00:00"
     }
   ],
-  "updated": "2026-11-03T01:48:34+03:00"
+  "updated": "2026-11-04T21:46:59+03:00"
 }
