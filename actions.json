@@ -1222,7 +1222,20 @@
       "is_admin_action": false,
       "context": "+атака 11.11",
       "post_time": "2026-11-11T15:40:18+00:00"
+    },
+    {
+      "id": "Семён Белянский:exile:2026-11-18",
+      "post_id": null,
+      "pos": null,
+      "author": null,
+      "target": "Семён Белянский",
+      "command": "exile",
+      "date": "2026-11-18",
+      "date_from_text": false,
+      "is_admin_action": false,
+      "context": "неактивен 7 дн. подряд",
+      "post_time": null
     }
   ],
-  "updated": "2026-11-12T00:17:28+03:00"
+  "updated": "2026-11-18T04:49:15+03:00"
 }
